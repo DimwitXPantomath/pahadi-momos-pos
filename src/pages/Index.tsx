@@ -1,3 +1,6 @@
+console.log("SUPABASE URL:", import.meta.env.VITE_SUPABASE_URL);
+
+
 import { useState } from "react";
 import { supabase } from "@/lib/supabase";
 import type { Order, OrderItem } from "@/types/pos";
