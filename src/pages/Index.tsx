@@ -8,6 +8,7 @@ import { useEffect } from "react";
 import { useMemo } from "react";
 import { useRef } from "react";
 
+import type { MenuItem } from "@/types/pos";
 
 const OUTLET_ID = "demo-outlet";
 
@@ -19,6 +20,7 @@ export default function Index() {
   const [qrOrderId, setQrOrderId] = useState<string | null>(null);
   const [view, setView] = useState<View>("menu");
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [menu, setMenu] = useState<MenuItem[]>([]);
 
   const placedOrders = orders.filter(o => o.status === OrderStatus.PLACED);
   const preparingOrders = orders.filter(o => o.status === OrderStatus.PREPARING);
@@ -216,15 +218,6 @@ export default function Index() {
     }
   };
 
-  const menu = [
-    { id: "1", name: "Espresso", price: 120, category: "Coffee" },
-    { id: "2", name: "Cappuccino", price: 160, category: "Coffee" },
-    { id: "3", name: "Latte", price: 180, category: "Coffee" },
-    { id: "4", name: "Green Tea", price: 100, category: "Tea" },
-    { id: "5", name: "Masala Chai", price: 90, category: "Tea" },
-    { id: "6", name: "Croissant", price: 140, category: "Snacks" },
-    { id: "7", name: "Veg Sandwich", price: 150, category: "Snacks" },
-  ];
 
   const categories = useMemo(
     () => [...new Set(menu.map(i => i.category))],
@@ -238,6 +231,19 @@ export default function Index() {
       setActiveCategory(categories[0]);
     }
   }, [categories]);
+
+  useEffect(() => {
+    const fetchMenu = async () => {
+      const { data } = await supabase
+        .from("menu_items")
+        .select("*")
+        .eq("available", true);
+
+      if (data) setMenu(data);
+    };
+
+    fetchMenu();
+  }, []);
 
 
   useEffect(() => {
@@ -290,24 +296,86 @@ export default function Index() {
 
 
   return (
-    <>
-      {/* MAIN POS UI */}
-      <div style={{ padding: 20 }}>
-        <h2>POS</h2>
+    <div style={{ display: "flex", height: "100vh" }}>
 
-        {/* Navigation */}
-        <div style={{ marginBottom: 20 }}>
-          <button onClick={() => setView("menu")}>
+      {/* SIDEBAR */}
+      <div style={{
+        width: 220,
+        background: "#111",
+        color: "white",
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: "space-between",
+        padding: 20
+      }}>
+
+        {/* TOP SECTION */}
+        <div>
+          <h2 style={{ marginBottom: 30, fontWeight: "bold" }}>
+            PAHADI MOMOS
+          </h2>
+
+          <div
+            onClick={() => setView("menu")}
+            style={{
+              marginBottom: 15,
+              cursor: "pointer",
+              padding: "8px 12px",
+              borderRadius: 6,
+              fontWeight: view === "menu" ? "bold" : "normal",
+              background: view === "menu" ? "#f97316" : "transparent",
+              color: view === "menu" ? "white" : "white",
+            }}
+          >
             Menu
-          </button>
+          </div>
 
-          <button
+          <div
             onClick={() => setView("orders")}
-            style={{ marginLeft: 10 }}
+            style={{
+              marginBottom: 15,
+              cursor: "pointer",
+              padding: "8px 12px",
+              borderRadius: 6,
+              fontWeight: view === "orders" ? "bold" : "normal",
+              background: view === "orders" ? "#f97316" : "transparent",
+              color: view === "orders" ? "white" : "white",
+            }}
           >
             Orders
-          </button>
+          </div>
+
+          <div style={{ marginBottom: 15, opacity: 0.5 }}>
+            Reports
+          </div>
+
+          <div style={{ marginBottom: 15, opacity: 0.5 }}>
+            Order History
+          </div>
         </div>
+
+        {/* BOTTOM SECTION */}
+        <div style={{
+          background: "#222",
+          padding: 15,
+          borderRadius: 8
+        }}>
+          <div style={{ fontSize: 14 }}>
+            Today Orders
+          </div>
+          <div style={{ fontSize: 22, fontWeight: "bold" }}>
+            {orders.length}
+          </div>
+        </div>
+
+      </div>
+
+      {/* MAIN CONTENT */}
+      <div style={{
+        flex: 1,
+        padding: 30,
+        overflowY: "auto"
+      }}>
 
         {/* MENU VIEW */}
         {view === "menu" && (
@@ -505,6 +573,6 @@ export default function Index() {
         src="/notification.mp3"
         preload="auto"
       />
-    </>
+    </div>
   );
 }
