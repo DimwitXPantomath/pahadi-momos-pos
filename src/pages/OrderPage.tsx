@@ -6,6 +6,7 @@ import { useRef } from "react";
 
 export default function OrderPage() {
   console.log("🔥 OrderPage mounted");
+  const [previousStatus, setPreviousStatus] = useState<string | null>(null);
   const { id: orderId } = useParams();
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
@@ -14,16 +15,22 @@ export default function OrderPage() {
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
 
 
-  const enableNotifications = () => {
+  const enableNotifications = async () => {
     if (!audioRef.current) return;
 
-    audioRef.current.play()
-      .then(() => {
-        audioRef.current?.pause();
-        audioRef.current!.currentTime = 0;
-        setNotificationsEnabled(true);
-      })
-      .catch(() => {});
+    try {
+      const audio = audioRef.current;
+
+      audio.muted = true;
+      await audio.play();
+      audio.pause();
+      audio.currentTime = 0;
+      audio.muted = false;
+
+      setNotificationsEnabled(true);
+    } catch {
+      alert("Tap once again to enable sound.");
+    }
   };
 
   useEffect(() => {
@@ -61,13 +68,13 @@ export default function OrderPage() {
             filter: `id=eq.${orderId}`,
           },
           (payload: any) => {
-            setOrder(payload.new);
+            const updatedOrder = payload.new as Order;
+            setOrder(updatedOrder);
           }
         )
-        .subscribe((status: any) => {
-          console.log("CHANNEL STATUS:", status);
-          setConnectionStatus(status);
-        });
+      .subscribe((status) => {
+        setConnectionStatus(status);
+      });
     };
 
     init();
@@ -83,14 +90,12 @@ export default function OrderPage() {
   useEffect(() => {
     if (!order || !notificationsEnabled) return;
 
-    if (order.status === "READY") {
-      if (audioRef.current) {
-        audioRef.current.play().catch(() => {});
-      }
+    if (previousStatus && order.status === "READY" && previousStatus !== "READY") {
+      audioRef.current?.play().catch(() => {});
     }
+
+    setPreviousStatus(order.status);
   }, [order?.status, notificationsEnabled]);
-
-
 
   if (loading) return <div>Loading…</div>;
   if (!order) return <div>Order not found</div>;

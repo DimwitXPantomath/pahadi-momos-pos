@@ -20,6 +20,10 @@ export default function Index() {
   const [view, setView] = useState<View>("menu");
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
+  const placedOrders = orders.filter(o => o.status === OrderStatus.PLACED);
+  const preparingOrders = orders.filter(o => o.status === OrderStatus.PREPARING);
+  const readyOrders = orders.filter(o => o.status === OrderStatus.READY);
+  const collectedOrders = orders.filter(o => o.status === OrderStatus.COLLECTED);
 
   const addToCart = (item: { id: string; name: string; price: number }) => {
     setCart((prev) => {
@@ -34,6 +38,50 @@ export default function Index() {
           return [...prev, { ...item, quantity: 1 }];
         });
       };
+
+    const renderOrders = (list: Order[]) =>
+      list.map((o) => (
+        <div
+          key={o.id}
+          style={{
+            border: "1px solid #ddd",
+            padding: 10,
+            marginTop: 10,
+            borderRadius: 8,
+          }}
+        >
+          <div>
+            <strong>#{o.order_no}</strong> — {o.status}
+          </div>
+
+          {o.status === OrderStatus.PLACED && (
+            <div style={{ marginTop: 8 }}>
+              {[5, 10, 15].map((min) => (
+                <button
+                  key={min}
+                  onClick={() => startPreparing(o.id, min)}
+                  style={{ marginRight: 6 }}
+                >
+                  {min} min
+                </button>
+              ))}
+            </div>
+          )}
+
+          {o.status === OrderStatus.PREPARING && (
+            <button onClick={() => markReady(o.id)} style={{ marginTop: 8 }}>
+              Mark Ready
+            </button>
+          )}
+
+          {o.status === OrderStatus.READY && (
+            <button onClick={() => collectOrder(o.id)} style={{ marginTop: 8 }}>
+              Collected
+            </button>
+          )}
+        </div>
+      ));
+  
 
   const orderPriority: Record<OrderStatus, number> = {
     [OrderStatus.PLACED]: 1,
@@ -78,11 +126,6 @@ export default function Index() {
       return;
     }
 
-    const total = cart.reduce(
-      (sum, i) => sum + i.price * i.quantity,
-      0
-    );
-
     const payload = {
       outlet_id: OUTLET_ID,
       order_no: orders.length + 1,
@@ -105,11 +148,14 @@ export default function Index() {
       return;
     }
 
-    setOrders((prev) => [data, ...prev]);
-      setQrOrderId(data.id); // 👈 THIS
-      setView("orders");
-      setCart([]);
+    // DO NOT manually setOrders here
+    // Realtime will handle insertion
+
+    setQrOrderId(data.id);
+    setView("orders");
+    setCart([]);
   };
+
 
   const startPreparing = async (orderId: string, minutes: number) => {
     const readyAt = new Date(
@@ -205,17 +251,21 @@ export default function Index() {
           table: "orders",
         },
         (payload) => {
+          const newOrder = payload.new as Order;
+
           if (payload.eventType === "INSERT") {
-            setOrders(prev => [payload.new as Order, ...prev]);
-            playNotification();
+            setOrders((prev) => {
+              if (prev.some((o) => o.id === newOrder.id)) {
+                return prev;
+              }
+              return [newOrder, ...prev];
+            });
           }
 
           if (payload.eventType === "UPDATE") {
-            setOrders(prev =>
-              prev.map(o =>
-                o.id === payload.new.id
-                  ? payload.new as Order
-                  : o
+            setOrders((prev) =>
+              prev.map((o) =>
+                o.id === newOrder.id ? newOrder : o
               )
             );
           }
@@ -227,6 +277,7 @@ export default function Index() {
       supabase.removeChannel(channel);
     };
   }, []);
+
 
   const playNotification = () => {
     if (audioRef.current) {
@@ -379,74 +430,31 @@ export default function Index() {
 
         {/* ORDERS VIEW */}
         {view === "orders" && (
-          <div>
-            <strong>Running Orders:</strong>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+            
+            <div>
+              <h3>🆕 Orders</h3>
+              {renderOrders(placedOrders)}
+            </div>
 
-            {orders.length === 0 && <p>No active orders</p>}
-              {[...orders]
-                .sort((a, b) => orderPriority[a.status] - orderPriority[b.status])
-                .map((o) => (
-              <div
-                key={o.id}
-                style={{
-                  border: "1px solid #ddd",
-                  padding: 10,
-                  marginTop: 10,
-                }}
-              >
-                <div>
-                  <strong>#{o.order_no}</strong> —{" "}
-                  <span
-                    style={{
-                      color:
-                        o.status === "READY"
-                          ? "green"
-                          : o.status === "PREPARING"
-                          ? "orange"
-                          : "gray",
-                      fontWeight: "bold",
-                    }}
-                  >
-                    {o.status}
-                  </span>
-                </div>
+            <div>
+              <h3>👨‍🍳 Preparing</h3>
+              {renderOrders(preparingOrders)}
+            </div>
 
-                {o.status === OrderStatus.PLACED && (
-                  <div style={{ marginTop: 8 }}>
-                    {[5, 10, 15].map((min) => (
-                      <button
-                        key={min}
-                        onClick={() => startPreparing(o.id, min)}
-                        style={{ marginRight: 6 }}
-                      >
-                        {min} min
-                      </button>
-                    ))}
-                  </div>
-                )}
+            <div>
+              <h3>🔔 Ready</h3>
+              {renderOrders(readyOrders)}
+            </div>
 
-                {o.status === OrderStatus.PREPARING && (
-                  <button
-                    onClick={() => markReady(o.id)}
-                    style={{ marginTop: 8 }}
-                  >
-                    Mark Ready
-                  </button>
-                )}
+            <div>
+              <h3>✅ Collected</h3>
+              {renderOrders(collectedOrders)}
+            </div>
 
-                {o.status === OrderStatus.READY && (
-                  <button
-                    onClick={() => collectOrder(o.id)}
-                    style={{ marginTop: 8 }}
-                  >
-                    Collected
-                  </button>
-                )}
-
-              </div>
-            ))}
           </div>
         )}
+
       </div>
 
       {/* QR MODAL */}
