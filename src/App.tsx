@@ -1,19 +1,13 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
-import CustomerOrder from "./pages/CustomerOrder";
 import PrintKOT from "./pages/PrintKOT";
 import PrintBill from "./pages/PrintBill";
-import OrderStatus from "./pages/OrderStatus";
-import OrderPage from "@/pages/OrderPage";
 import OrderTracking from "@/pages/OrderTracking";
-
 
 const App = () => {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/order/:id" element={<OrderPage />} />
-        <Route path="/order/:orderId" element={<OrderStatus />} />
         <Route path="/" element={<Index />} />
         <Route path="/order/:id" element={<OrderTracking />} />
         <Route path="/print/kot" element={<PrintKOT />} />

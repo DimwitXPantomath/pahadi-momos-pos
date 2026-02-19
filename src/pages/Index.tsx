@@ -1,5 +1,3 @@
-console.log("SUPABASE URL:", import.meta.env.VITE_SUPABASE_URL);
-
 
 import { useState } from "react";
 import { supabase } from "@/lib/supabase";
@@ -8,6 +6,7 @@ import QRCode from "react-qr-code";
 import { OrderStatus } from "@/types/pos";
 import { useEffect } from "react";
 import { useMemo } from "react";
+import { useRef } from "react";
 
 
 const OUTLET_ID = "demo-outlet";
@@ -19,7 +18,8 @@ export default function Index() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [qrOrderId, setQrOrderId] = useState<string | null>(null);
   const [view, setView] = useState<View>("menu");
-  
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
 
   const addToCart = (item: { id: string; name: string; price: number }) => {
     setCart((prev) => {
@@ -207,6 +207,7 @@ export default function Index() {
         (payload) => {
           if (payload.eventType === "INSERT") {
             setOrders(prev => [payload.new as Order, ...prev]);
+            playNotification();
           }
 
           if (payload.eventType === "UPDATE") {
@@ -226,6 +227,15 @@ export default function Index() {
       supabase.removeChannel(channel);
     };
   }, []);
+
+  const playNotification = () => {
+    if (audioRef.current) {
+      audioRef.current.currentTime = 0;
+      audioRef.current.play().catch(err => {
+        console.log("Audio blocked:", err);
+      });
+    }
+  };
 
 
   return (
@@ -482,6 +492,11 @@ export default function Index() {
           </div>
         </div>
       )}
+      <audio
+        ref={audioRef}
+        src="/notification.mp3"
+        preload="auto"
+      />
     </>
   );
 }
