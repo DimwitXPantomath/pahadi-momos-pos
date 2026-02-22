@@ -12,7 +12,8 @@ import type { MenuItem } from "@/types/pos";
 
 const OUTLET_ID = "demo-outlet";
 
-type View = "menu" | "orders";
+type View = "menu" | "orders" | "reports" | "history";
+type PaymentMethod = "CASH" | "CARD" | "UPI";
 
 export default function Index() {
   const [cart, setCart] = useState<OrderItem[]>([]);
@@ -21,11 +22,46 @@ export default function Index() {
   const [view, setView] = useState<View>("menu");
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [menu, setMenu] = useState<MenuItem[]>([]);
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("CASH");
+  const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+  const [newItemName, setNewItemName] = useState("");
+  const [newItemPrice, setNewItemPrice] = useState("");
+  const [newItemCategory, setNewItemCategory] = useState("");
+
+
 
   const placedOrders = orders.filter(o => o.status === OrderStatus.PLACED);
   const preparingOrders = orders.filter(o => o.status === OrderStatus.PREPARING);
   const readyOrders = orders.filter(o => o.status === OrderStatus.READY);
   const collectedOrders = orders.filter(o => o.status === OrderStatus.COLLECTED);
+
+  const sidebarItems: { label: string; value: View }[] = [
+    { label: "Menu", value: "menu" },
+    { label: "Orders", value: "orders" },
+    { label: "Reports", value: "reports" },
+    { label: "Order History", value: "history" },
+  ];
+
+    const addMenuItem = async () => {
+      if (!newItemName || !newItemPrice || !newItemCategory) return;
+
+      const { data, error } = await supabase
+        .from("menu_items")
+        .insert({
+          name: newItemName,
+          price: Number(newItemPrice),
+          category: newItemCategory,
+          available: true,
+        })
+        .select()
+        .single();
+
+      if (!error && data) {
+        setMenuItems((prev) => [...prev, data]);
+        setNewItemName("");
+        setNewItemPrice("");
+      }
+    };
 
   const addToCart = (item: { id: string; name: string; price: number }) => {
     setCart((prev) => {
@@ -136,6 +172,9 @@ export default function Index() {
       gst,
       total: grandTotal,
       status: OrderStatus.PLACED,
+      payment_method: paymentMethod,
+      loyalty_points_earned: Math.floor(grandTotal / 100),
+      loyalty_points_used: 0,
       created_at: new Date().toISOString(),
     };
 
@@ -204,7 +243,10 @@ export default function Index() {
   const collectOrder = async (orderId: string) => {
     const { error } = await supabase
       .from("orders")
-      .update({ status: OrderStatus.COLLECTED })
+        .update({
+          status: OrderStatus.COLLECTED,
+          closed_at: new Date().toISOString(),
+        })
       .eq("id", orderId);
 
     if (!error) {
@@ -237,13 +279,14 @@ export default function Index() {
       const { data } = await supabase
         .from("menu_items")
         .select("*")
-        .eq("available", true);
+        .order("created_at", { ascending: true });
 
-      if (data) setMenu(data);
+      if (data) setMenuItems(data);
     };
 
     fetchMenu();
   }, []);
+
 
 
   useEffect(() => {
@@ -483,6 +526,40 @@ export default function Index() {
                   <span>₹{grandTotal.toFixed(2)}</span>
                 </div>
               </div>
+                
+                <div style={{ marginTop: 10 }}>
+                  <select
+                    value={paymentMethod}
+                    onChange={(e) =>
+                      setPaymentMethod(e.target.value as PaymentMethod)
+                    }
+                  >
+                    <option value="CASH">Cash</option>
+                    <option value="CARD">Card</option>
+                    <option value="UPI">UPI</option>
+                  </select>
+                </div>
+
+                <div style={{ marginTop: 12 }}>
+                  <label style={{ fontWeight: "bold" }}>Payment Method</label>
+
+                  <select
+                    value={paymentMethod}
+                    onChange={(e) =>
+                      setPaymentMethod(e.target.value as "CASH" | "CARD" | "UPI")
+                    }
+                    style={{
+                      display: "block",
+                      marginTop: 6,
+                      padding: 6,
+                      width: "100%",
+                    }}
+                  >
+                    <option value="CASH">Cash</option>
+                    <option value="CARD">Card</option>
+                    <option value="UPI">UPI</option>
+                  </select>
+                </div>
 
               <button
                 onClick={placeOrder}
