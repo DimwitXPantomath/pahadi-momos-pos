@@ -29,6 +29,7 @@ export default function Index() {
   const [newItemCategory, setNewItemCategory] = useState("");
   const [categories, setCategories] = useState<{ id: string; name: string }[]>([]);
   const [activeCategory, setActiveCategory] = useState<string>("");
+  const [menuMode, setMenuMode] = useState<"order" | "manage">("order");
 
   const placedOrders = orders.filter(o => o.status === OrderStatus.PLACED);
   const preparingOrders = orders.filter(o => o.status === OrderStatus.PREPARING);
@@ -460,7 +461,30 @@ export default function Index() {
       }}>
 
         {/* MENU VIEW */}
-        {view === "menu" && (
+                   
+         {view === "menu" && (
+          <div className="flex gap-4 mb-4">
+            <button
+              onClick={() => setMenuMode("order")}
+              className={`px-4 py-2 rounded ${
+                menuMode === "order" ? "bg-black text-white" : "bg-gray-200"
+              }`}
+            >
+              Order Mode
+            </button>
+
+            <button
+              onClick={() => setMenuMode("manage")}
+              className={`px-4 py-2 rounded ${
+                menuMode === "manage" ? "bg-black text-white" : "bg-gray-200"
+              }`}
+            >
+              Manage Menu
+            </button>
+          </div>
+         )}
+
+        {menuMode === "order" && (
           <div className="grid grid-cols-2 gap-6">
 
             {/* LEFT SIDE - MENU */}
@@ -568,21 +592,7 @@ export default function Index() {
                   <span>Total</span>
                   <span>₹{grandTotal.toFixed(2)}</span>
                 </div>
-              </div>
-                
-                <div style={{ marginTop: 10 }}>
-                  <select
-                    value={paymentMethod}
-                    onChange={(e) =>
-                      setPaymentMethod(e.target.value as PaymentMethod)
-                    }
-                  >
-                    <option value="CASH">Cash</option>
-                    <option value="CARD">Card</option>
-                    <option value="UPI">UPI</option>
-                  </select>
-                </div>
-
+                  </div>
                 <div style={{ marginTop: 12 }}>
                   <label style={{ fontWeight: "bold" }}>Payment Method</label>
 
@@ -611,10 +621,68 @@ export default function Index() {
                 Place Order
               </button>
             </div>
-
           </div>
         )}
 
+        {menuMode === "manage" && (
+          <div>
+            {categories.map(cat => (
+              <div key={cat.id} className="mb-6">
+                <h3 className="font-semibold mb-2">{cat.name}</h3>
+
+                {menuItems
+                  .filter(item => item.category_id === cat.id)
+                  .map(item => (
+                    <div
+                      key={item.id}
+                      className="flex justify-between items-center border rounded p-3 mb-2"
+                    >
+                      <div>
+                        <strong>{item.name}</strong>
+                        <div>₹{item.price}</div>
+                      </div>
+
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => {
+                            const newPrice = prompt(
+                              "New price",
+                              item.price.toString()
+                            );
+                            if (newPrice)
+                              updateMenuItem(item.id, {
+                                price: Number(newPrice),
+                              });
+                          }}
+                          className="bg-gray-200 px-2 rounded"
+                        >
+                          Edit
+                        </button>
+
+                        <button
+                          onClick={() =>
+                            updateMenuItem(item.id, {
+                              available: !item.available,
+                            })
+                          }
+                          className="bg-gray-200 px-2 rounded"
+                        >
+                          {item.available ? "Disable" : "Enable"}
+                        </button>
+
+                        <button
+                          onClick={() => deleteMenuItem(item.id)}
+                          className="bg-red-500 text-white px-2 rounded"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* ORDERS VIEW */}
         {view === "orders" && (
