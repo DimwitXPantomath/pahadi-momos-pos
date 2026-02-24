@@ -1,14 +1,4 @@
 import { number } from "framer-motion";
-
-export interface MenuItem {
-  id: string;
-  name: string;
-  price: number;
-  category: string;
-  available: boolean;
-  description?: string;
-}
-
 export const categories = [
   "All",
   "Coffee",
@@ -34,8 +24,6 @@ export interface OrderItem {
   category?: string;
 };
 
-
-
 export type OutletInfo = {
   id: string;
   name: string;
@@ -51,7 +39,6 @@ export enum OrderStatus {
   COLLECTED = "COLLECTED",
 }
 
-
 export interface Order {
   id: string;
   outlet_id: string;
@@ -65,4 +52,12 @@ export interface Order {
   rating?: number | null;
 }
 
+export type MenuItem = {
+  id: string;
+  name: string;
+  price: number;
+  category_id: string;
+  available: boolean;
+  created_at?: string;
+};
 

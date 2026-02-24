@@ -27,8 +27,8 @@ export default function Index() {
   const [newItemName, setNewItemName] = useState("");
   const [newItemPrice, setNewItemPrice] = useState("");
   const [newItemCategory, setNewItemCategory] = useState("");
-
-
+  const [categories, setCategories] = useState<{ id: string; name: string }[]>([]);
+  const [activeCategory, setActiveCategory] = useState<string>("");
 
   const placedOrders = orders.filter(o => o.status === OrderStatus.PLACED);
   const preparingOrders = orders.filter(o => o.status === OrderStatus.PREPARING);
@@ -42,26 +42,32 @@ export default function Index() {
     { label: "Order History", value: "history" },
   ];
 
-    const addMenuItem = async () => {
-      if (!newItemName || !newItemPrice || !newItemCategory) return;
+  useEffect(() => {
+    if (categories.length > 0) {
+      setActiveCategory(categories[0].id);
+    }
+  }, [categories]);
 
-      const { data, error } = await supabase
-        .from("menu_items")
-        .insert({
-          name: newItemName,
-          price: Number(newItemPrice),
-          category: newItemCategory,
-          available: true,
-        })
-        .select()
-        .single();
+  const addMenuItem = async () => {
+    if (!newItemName || !newItemPrice || !newItemCategory) return;
 
-      if (!error && data) {
-        setMenuItems((prev) => [...prev, data]);
-        setNewItemName("");
-        setNewItemPrice("");
-      }
-    };
+    const { data, error } = await supabase
+      .from("menu_items")
+      .insert({
+        name: newItemName,
+        price: Number(newItemPrice),
+        category: newItemCategory,
+        available: true,
+      })
+      .select()
+      .single();
+
+    if (!error && data) {
+      setMenuItems((prev) => [...prev, data]);
+      setNewItemName("");
+      setNewItemPrice("");
+    }
+  };
 
   const addToCart = (item: { id: string; name: string; price: number }) => {
     setCart((prev) => {
@@ -260,19 +266,41 @@ export default function Index() {
     }
   };
 
+  const updateMenuItem = async (
+    id: string,
+    updates: Partial<MenuItem>
+  ) => {
+    const { data, error } = await supabase
+      .from("menu_items")
+      .update(updates)
+      .eq("id", id)
+      .select()
+      .single();
 
-  const categories = useMemo(
-    () => [...new Set(menu.map(i => i.category))],
-    []
-  );
-
-  const [activeCategory, setActiveCategory] = useState<string>("");
-
-  useEffect(() => {
-    if (categories.length > 0) {
-      setActiveCategory(categories[0]);
+    if (!error && data) {
+      setMenuItems(prev =>
+        prev.map(item =>
+          item.id === id ? data : item
+        )
+      );
     }
-  }, [categories]);
+  };
+
+  const deleteMenuItem = async (id: string) => {
+    const confirmDelete = confirm("Delete this item?");
+    if (!confirmDelete) return;
+
+    const { error } = await supabase
+      .from("menu_items")
+      .delete()
+      .eq("id", id);
+
+    if (!error) {
+      setMenuItems(prev =>
+        prev.filter(item => item.id !== id)
+      );
+    }
+  };
 
   useEffect(() => {
     const fetchMenu = async () => {
@@ -286,7 +314,18 @@ export default function Index() {
 
     fetchMenu();
   }, []);
+  
+  useEffect(() => {
+  const fetchCategories = async () => {
+    const { data } = await supabase
+      .from("categories")
+      .select("*");
 
+    if (data) setCategories(data);
+  };
+
+  fetchCategories();
+}, []);
 
 
   useEffect(() => {
@@ -429,22 +468,26 @@ export default function Index() {
               <div className="flex gap-2 mb-4">
                 {categories.map(cat => (
                   <button
-                    key={cat}
-                    onClick={() => setActiveCategory(cat)}
-                    className={`px-4 py-2 rounded-lg font-medium ${
-                      activeCategory === cat
-                        ? "bg-black text-white"
-                        : "bg-gray-200"
-                    }`}
-                  >
-                    {cat}
+                    key={cat.id}
+                      onClick={() => setActiveCategory(cat.id)}
+                      className={`px-4 py-2 rounded-lg font-medium ${
+                        activeCategory === cat.id
+                          ? "bg-black text-white"
+                          : "bg-gray-200"
+                      }`}
+                      >
+                    {cat.name}
                   </button>
                 ))}
               </div>
 
               <div className="space-y-3">
-                {menu
-                  .filter(item => item.category === activeCategory)
+                {menuItems
+                  .filter(
+                    item =>
+                      item.category_id === activeCategory &&
+                      item.available
+                    )
                   .map(item => (
                     <div
                       key={item.id}
