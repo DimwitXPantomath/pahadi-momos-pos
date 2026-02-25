@@ -49,23 +49,29 @@ export default function Index() {
   }, [categories]);
 
   const addMenuItem = async () => {
-    if (!newItemName || !newItemPrice || !newItemCategory) return;
+    if (!newItemName || !newItemPrice || !newItemCategory) {
+      alert("Fill all fields");
+      return;
+    }
 
     const { data, error } = await supabase
       .from("menu_items")
       .insert({
         name: newItemName,
         price: Number(newItemPrice),
-        category: newItemCategory,
+        category_id: newItemCategory,
         available: true,
       })
       .select()
       .single();
 
     if (!error && data) {
-      setMenuItems((prev) => [...prev, data]);
+      setMenuItems(prev => [...prev, data]);
       setNewItemName("");
       setNewItemPrice("");
+      setNewItemCategory("");
+    } else {
+      console.error(error);
     }
   };
 
@@ -513,6 +519,46 @@ export default function Index() {
             {/* MANAGE MODE */}
             {menuMode === "manage" && (
               <div>
+                <div className="mb-6 border rounded p-4">
+                  <h3 className="font-semibold mb-3">Add New Item</h3>
+
+                  <div className="flex gap-3 mb-3">
+                    <input
+                      placeholder="Item name"
+                      value={newItemName}
+                      onChange={(e) => setNewItemName(e.target.value)}
+                      className="border p-2 rounded w-full"
+                    />
+
+                    <input
+                      type="number"
+                      placeholder="Price"
+                      value={newItemPrice}
+                      onChange={(e) => setNewItemPrice(e.target.value)}
+                      className="border p-2 rounded w-32"
+                    />
+                  </div>
+
+                  <select
+                    value={newItemCategory}
+                    onChange={(e) => setNewItemCategory(e.target.value)}
+                    className="border p-2 rounded w-full mb-3"
+                  >
+                    <option value="">Select Category</option>
+                    {categories.map(cat => (
+                      <option key={cat.id} value={cat.id}>
+                        {cat.name}
+                      </option>
+                    ))}
+                  </select>
+
+                  <button
+                    onClick={addMenuItem}
+                    className="bg-black text-white px-4 py-2 rounded"
+                  >
+                    Add Item
+                  </button>
+                </div>
                 {categories.map(cat => (
                   <div key={cat.id} className="mb-6">
                     <h3 className="font-semibold mb-2">{cat.name}</h3>
