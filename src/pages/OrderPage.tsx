@@ -16,22 +16,21 @@ export default function OrderPage() {
 
 
   const enableNotifications = async () => {
-    if (!audioRef.current) return;
+    const audio = audioRef.current;
+    if (!audio) return;
 
     try {
-      const audio = audioRef.current;
-
-      audio.muted = true;
+      // Force interaction-based unlock
       await audio.play();
       audio.pause();
       audio.currentTime = 0;
-      audio.muted = false;
 
       setNotificationsEnabled(true);
-    } catch {
-      alert("Tap once again to enable sound.");
+    } catch (err) {
+      console.log("Audio unlock failed:", err);
+      alert("Tap anywhere once and press OK again.");
     }
-  };
+  }
 
   useEffect(() => {
     if (!orderId) return;

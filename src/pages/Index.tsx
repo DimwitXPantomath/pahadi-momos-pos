@@ -21,7 +21,6 @@ export default function Index() {
   const [qrOrderId, setQrOrderId] = useState<string | null>(null);
   const [view, setView] = useState<View>("menu");
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const [menu, setMenu] = useState<MenuItem[]>([]);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("CASH");
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [newItemName, setNewItemName] = useState("");
@@ -317,17 +316,16 @@ export default function Index() {
   }, []);
   
   useEffect(() => {
-  const fetchCategories = async () => {
-    const { data } = await supabase
-      .from("categories")
-      .select("*");
+    const fetchCategories = async () => {
+      const { data } = await supabase
+        .from("categories")
+        .select("*");
 
-    if (data) setCategories(data);
-  };
+      if (data) setCategories(data);
+    };
 
-  fetchCategories();
-}, []);
-
+    fetchCategories();
+  }, []);
 
   useEffect(() => {
     const channel = supabase
@@ -427,15 +425,36 @@ export default function Index() {
           >
             Orders
           </div>
-
-          <div style={{ marginBottom: 15, opacity: 0.5 }}>
+             <div
+                onClick={() => setView("reports")}
+                style={{
+                  marginBottom: 15,
+                  cursor: "pointer",
+                  padding: "8px 12px",
+                  borderRadius: 6,
+                  fontWeight: view === "reports" ? "bold" : "normal",
+                  background: view === "reports" ? "#f97316" : "transparent",
+                  color: view === "reports" ? "white" : "white",
+                }}
+              >
             Reports
           </div>
-
-          <div style={{ marginBottom: 15, opacity: 0.5 }}>
-            Order History
+          
+             <div
+              onClick={() => setView("history")}
+                style={{
+                  marginBottom: 15,
+                  cursor: "pointer",
+                  padding: "8px 12px",
+                  borderRadius: 6,
+                  fontWeight: view === "history" ? "bold" : "normal",
+                  background: view === "history" ? "#f97316" : "transparent",
+                  color: "white",
+                }}
+              >
+              Order History
+            </div>
           </div>
-        </div>
 
         {/* BOTTOM SECTION */}
         <div style={{
@@ -461,253 +480,138 @@ export default function Index() {
       }}>
 
         {/* MENU VIEW */}
-                   
-         {view === "menu" && (
-          <div className="flex gap-4 mb-4">
-            <button
-              onClick={() => setMenuMode("order")}
-              className={`px-4 py-2 rounded ${
-                menuMode === "order" ? "bg-black text-white" : "bg-gray-200"
-              }`}
-            >
-              Order Mode
-            </button>
-
-            <button
-              onClick={() => setMenuMode("manage")}
-              className={`px-4 py-2 rounded ${
-                menuMode === "manage" ? "bg-black text-white" : "bg-gray-200"
-              }`}
-            >
-              Manage Menu
-            </button>
-          </div>
-         )}
-
-        {menuMode === "order" && (
-          <div className="grid grid-cols-2 gap-6">
-
-            {/* LEFT SIDE - MENU */}
-            <div>
-              <div className="flex gap-2 mb-4">
-                {categories.map(cat => (
-                  <button
-                    key={cat.id}
-                      onClick={() => setActiveCategory(cat.id)}
-                      className={`px-4 py-2 rounded-lg font-medium ${
-                        activeCategory === cat.id
-                          ? "bg-black text-white"
-                          : "bg-gray-200"
-                      }`}
-                      >
-                    {cat.name}
-                  </button>
-                ))}
-              </div>
-
-              <div className="space-y-3">
-                {menuItems
-                  .filter(
-                    item =>
-                      item.category_id === activeCategory &&
-                      item.available
-                    )
-                  .map(item => (
-                    <div
-                      key={item.id}
-                      className="flex justify-between items-center border rounded-lg p-4"
-                    >
-                      <div>
-                        <p className="font-semibold">{item.name}</p>
-                        <p className="text-sm text-gray-500">
-                          ₹{item.price}
-                        </p>
-                      </div>
-
-                      <button
-                        onClick={() => addToCart(item)}
-                        className="bg-black text-white px-4 py-2 rounded-lg"
-                      >
-                        Add
-                      </button>
-                    </div>
-                ))}
-              </div>
-            </div>
-
-            {/* RIGHT SIDE - CART */}
-            <div className="border rounded-lg p-4">
-              <h3 className="text-lg font-semibold mb-4">Cart</h3>
-
-              {cart.length === 0 && (
-                <p className="text-gray-500">No items added</p>
-              )}
-
-              <div className="space-y-3">
-                {cart.map(i => (
-                  <div
-                    key={i.id}
-                    className="flex justify-between items-center"
-                  >
-                    <div>
-                      <p>{i.name}</p>
-                      <p className="text-sm text-gray-500">
-                        ₹{i.price} × {i.quantity}
-                      </p>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => decreaseQty(i.id)}
-                        className="px-2 bg-gray-200 rounded"
-                      >
-                        -
-                      </button>
-
-                      <span>{i.quantity}</span>
-
-                      <button
-                        onClick={() => increaseQty(i.id)}
-                        className="px-2 bg-gray-200 rounded"
-                      >
-                        +
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="border-t mt-4 pt-4 space-y-2">
-                <div className="flex justify-between">
-                  <span>Subtotal</span>
-                  <span>₹{subtotal.toFixed(2)}</span>
-                </div>
-
-                <div className="flex justify-between">
-                  <span>GST (5%)</span>
-                  <span>₹{gst.toFixed(2)}</span>
-                </div>
-
-                <div className="flex justify-between font-bold text-lg">
-                  <span>Total</span>
-                  <span>₹{grandTotal.toFixed(2)}</span>
-                </div>
-                  </div>
-                <div style={{ marginTop: 12 }}>
-                  <label style={{ fontWeight: "bold" }}>Payment Method</label>
-
-                  <select
-                    value={paymentMethod}
-                    onChange={(e) =>
-                      setPaymentMethod(e.target.value as "CASH" | "CARD" | "UPI")
-                    }
-                    style={{
-                      display: "block",
-                      marginTop: 6,
-                      padding: 6,
-                      width: "100%",
-                    }}
-                  >
-                    <option value="CASH">Cash</option>
-                    <option value="CARD">Card</option>
-                    <option value="UPI">UPI</option>
-                  </select>
-                </div>
+        {view === "menu" && (
+          <>
+            {/* Toggle */}
+            <div className="flex gap-4 mb-4">
+              <button
+                onClick={() => setMenuMode("order")}
+                className={`px-4 py-2 rounded ${
+                  menuMode === "order" ? "bg-black text-white" : "bg-gray-200"
+                }`}
+              >
+                Order Mode
+              </button>
 
               <button
-                onClick={placeOrder}
-                className="w-full mt-4 bg-black text-white py-3 rounded-lg font-semibold"
+                onClick={() => setMenuMode("manage")}
+                className={`px-4 py-2 rounded ${
+                  menuMode === "manage" ? "bg-black text-white" : "bg-gray-200"
+                }`}
               >
-                Place Order
+                Manage Menu
               </button>
             </div>
-          </div>
-        )}
 
-        {menuMode === "manage" && (
-          <div>
-            {categories.map(cat => (
-              <div key={cat.id} className="mb-6">
-                <h3 className="font-semibold mb-2">{cat.name}</h3>
+            {/* ORDER MODE */}
+            {menuMode === "order" && (
+              <div className="grid grid-cols-2 gap-6">
+                ... your existing order layout ...
+              </div>
+            )}
 
-                {menuItems
-                  .filter(item => item.category_id === cat.id)
-                  .map(item => (
-                    <div
-                      key={item.id}
-                      className="flex justify-between items-center border rounded p-3 mb-2"
-                    >
-                      <div>
-                        <strong>{item.name}</strong>
-                        <div>₹{item.price}</div>
-                      </div>
+            {/* MANAGE MODE */}
+            {menuMode === "manage" && (
+              <div>
+                {categories.map(cat => (
+                  <div key={cat.id} className="mb-6">
+                    <h3 className="font-semibold mb-2">{cat.name}</h3>
 
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => {
-                            const newPrice = prompt(
-                              "New price",
-                              item.price.toString()
-                            );
-                            if (newPrice)
-                              updateMenuItem(item.id, {
-                                price: Number(newPrice),
-                              });
-                          }}
-                          className="bg-gray-200 px-2 rounded"
+                    {menuItems
+                      .filter(item => item.category_id === cat.id)
+                      .map(item => (
+                        <div
+                          key={item.id}
+                          className="flex justify-between items-center border rounded p-3 mb-2"
                         >
-                          Edit
-                        </button>
+                          <div>
+                            <strong>{item.name}</strong>
+                            <div>₹{item.price}</div>
+                          </div>
 
-                        <button
-                          onClick={() =>
-                            updateMenuItem(item.id, {
-                              available: !item.available,
-                            })
-                          }
-                          className="bg-gray-200 px-2 rounded"
-                        >
-                          {item.available ? "Disable" : "Enable"}
-                        </button>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => {
+                                const newPrice = prompt(
+                                  "New price",
+                                  item.price.toString()
+                                );
+                                if (newPrice)
+                                  updateMenuItem(item.id, {
+                                    price: Number(newPrice),
+                                  });
+                              }}
+                              className="bg-gray-200 px-2 rounded"
+                            >
+                              Edit
+                            </button>
 
-                        <button
-                          onClick={() => deleteMenuItem(item.id)}
-                          className="bg-red-500 text-white px-2 rounded"
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </div>
+                            <button
+                              onClick={() =>
+                                updateMenuItem(item.id, {
+                                  available: !item.available,
+                                })
+                              }
+                              className="bg-gray-200 px-2 rounded"
+                            >
+                              {item.available ? "Disable" : "Enable"}
+                            </button>
+
+                            <button
+                              onClick={() => deleteMenuItem(item.id)}
+                              className="bg-red-500 text-white px-2 rounded"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </div>
+                    ))}
+                  </div>
                 ))}
               </div>
-            ))}
+            )}
+          </>
+        )}           
+         
+         {view === "orders" && (
+          <div>
+            <h2 className="text-2xl font-bold mb-4">Orders</h2>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+              <div>
+                <h3>🆕 Orders</h3>
+                {renderOrders(placedOrders)}
+              </div>
+
+              <div>
+                <h3>👨‍🍳 Preparing</h3>
+                {renderOrders(preparingOrders)}
+              </div>
+
+              <div>
+                <h3>🔔 Ready</h3>
+                {renderOrders(readyOrders)}
+              </div>
+
+              <div>
+                <h3>✅ Collected</h3>
+                {renderOrders(collectedOrders)}
+              </div>
+            </div>
           </div>
         )}
 
-        {/* ORDERS VIEW */}
-        {view === "orders" && (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
-            
-            <div>
-              <h3>🆕 Orders</h3>
-              {renderOrders(placedOrders)}
-            </div>
+        {view === "reports" && (
+          <div>
+            <h2 className="text-2xl font-bold mb-4">Reports</h2>
+            <p>Reports dashboard coming next...</p>
+          </div>
+        )}
 
-            <div>
-              <h3>👨‍🍳 Preparing</h3>
-              {renderOrders(preparingOrders)}
-            </div>
-
-            <div>
-              <h3>🔔 Ready</h3>
-              {renderOrders(readyOrders)}
-            </div>
-
-            <div>
-              <h3>✅ Collected</h3>
-              {renderOrders(collectedOrders)}
-            </div>
-
+        {view === "history" && (
+          <div>
+            <h2 className="text-2xl font-bold mb-4">Order History</h2>
+            <p>Order history page coming next...</p>
           </div>
         )}
 
