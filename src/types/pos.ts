@@ -59,5 +59,6 @@ export type MenuItem = {
   category_id: string;
   available: boolean;
   created_at?: string;
+  is_veg: boolean;
 };
 

@@ -29,6 +29,10 @@ export default function Index() {
   const [categories, setCategories] = useState<{ id: string; name: string }[]>([]);
   const [activeCategory, setActiveCategory] = useState<string>("");
   const [menuMode, setMenuMode] = useState<"order" | "manage">("order");
+  const [newCategoryName, setNewCategoryName] = useState("");
+  const [newItemIsVeg, setNewItemIsVeg] = useState(true);
+  const [vegFilter, setVegFilter] = useState<"all" | "veg" | "nonveg">("all");
+
 
   const placedOrders = orders.filter(o => o.status === OrderStatus.PLACED);
   const preparingOrders = orders.filter(o => o.status === OrderStatus.PREPARING);
@@ -61,6 +65,7 @@ export default function Index() {
         price: Number(newItemPrice),
         category_id: newItemCategory,
         available: true,
+        is_veg: newItemIsVeg,
       })
       .select()
       .single();
@@ -72,6 +77,21 @@ export default function Index() {
       setNewItemCategory("");
     } else {
       console.error(error);
+    }
+  };
+
+  const addCategory = async () => {
+    if (!newCategoryName) return;
+
+    const { data, error } = await supabase
+      .from("categories")
+      .insert({ name: newCategoryName })
+      .select()
+      .single();
+
+    if (!error && data) {
+      setCategories(prev => [...prev, data]);
+      setNewCategoryName("");
     }
   };
 
@@ -512,13 +532,149 @@ export default function Index() {
             {/* ORDER MODE */}
             {menuMode === "order" && (
               <div className="grid grid-cols-2 gap-6">
-                ... your existing order layout ...
+
+                {/* LEFT SIDE - MENU */}
+                <div>
+
+                  {/* 🔵 Veg / Non-Veg Filter */}
+                  <div className="flex gap-3 mb-4">
+                    <button
+                      onClick={() => setVegFilter("all")}
+                      className={`px-3 py-1 rounded ${
+                        vegFilter === "all"
+                          ? "bg-black text-white"
+                          : "bg-gray-200"
+                      }`}
+                    >
+                      All
+                    </button>
+
+                    <button
+                      onClick={() => setVegFilter("veg")}
+                      className={`px-3 py-1 rounded ${
+                        vegFilter === "veg"
+                          ? "bg-green-600 text-white"
+                          : "bg-gray-200"
+                      }`}
+                    >
+                      Veg
+                    </button>
+
+                    <button
+                      onClick={() => setVegFilter("nonveg")}
+                      className={`px-3 py-1 rounded ${
+                        vegFilter === "nonveg"
+                          ? "bg-red-600 text-white"
+                          : "bg-gray-200"
+                      }`}
+                    >
+                      Non-Veg
+                    </button>
+                  </div>
+
+                  {/* 🔵 Category Buttons */}
+                  <div className="flex gap-2 mb-4">
+                    {categories.map(cat => (
+                      <button
+                        key={cat.id}
+                        onClick={() => setActiveCategory(cat.id)}
+                        className={`px-4 py-2 rounded-lg font-medium ${
+                          activeCategory === cat.id
+                            ? "bg-black text-white"
+                            : "bg-gray-200"
+                        }`}
+                      >
+                        {cat.name}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* 🔵 Menu Items */}
+                  <div className="space-y-3">
+                    {menuItems
+                      .filter(item => {
+                        if (item.category_id !== activeCategory) return false;
+                        if (!item.available) return false;
+
+                        if (vegFilter === "veg" && !item.is_veg) return false;
+                        if (vegFilter === "nonveg" && item.is_veg) return false;
+
+                        return true;
+                      })
+                      .map(item => (
+                        <div
+                          key={item.id}
+                          className="flex justify-between items-center border rounded-lg p-4"
+                        >
+                          <div>
+                            <div className="flex items-center gap-2">
+                              {/* Veg / Non-Veg Dot */}
+                              <span
+                                className={`w-4 h-4 border rounded-sm flex items-center justify-center ${
+                                  item.is_veg
+                                    ? "border-green-600"
+                                    : "border-red-600"
+                                }`}
+                              >
+                                <span
+                                  className={`w-2 h-2 rounded-full ${
+                                    item.is_veg
+                                      ? "bg-green-600"
+                                      : "bg-red-600"
+                                  }`}
+                                />
+                              </span>
+
+                              <p className="font-semibold">
+                                {item.name}
+                              </p>
+                            </div>
+                            <p className="text-sm text-gray-500">
+                              ₹{item.price}
+                            </p>
+                          </div>
+
+                          <button
+                            onClick={() => addToCart(item)}
+                            className="bg-black text-white px-4 py-2 rounded-lg"
+                          >
+                            Add
+                          </button>
+                        </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* RIGHT SIDE - CART */}
+                <div className="border rounded-lg p-4">
+                  {/* your existing cart code here */}
+                </div>
+
               </div>
             )}
 
             {/* MANAGE MODE */}
             {menuMode === "manage" && (
               <div>
+                <div className="mb-6 border rounded p-4">
+                  <h3 className="font-semibold mb-3">Add Category</h3>
+
+                  <div className="flex gap-3">
+                    <input
+                      placeholder="Category name"
+                      value={newCategoryName}
+                      onChange={(e) => setNewCategoryName(e.target.value)}
+                      className="border p-2 rounded w-full"
+                    />
+
+                    <button
+                      onClick={addCategory}
+                      className="bg-black text-white px-4 py-2 rounded"
+                    >
+                      Add
+                    </button>
+                  </div>
+                </div>
                 <div className="mb-6 border rounded p-4">
                   <h3 className="font-semibold mb-3">Add New Item</h3>
 
@@ -551,7 +707,16 @@ export default function Index() {
                       </option>
                     ))}
                   </select>
-
+                    <select
+                      value={newItemIsVeg ? "veg" : "nonveg"}
+                      onChange={(e) =>
+                        setNewItemIsVeg(e.target.value === "veg")
+                      }
+                      className="border p-2 rounded w-full mb-3"
+                    >
+                      <option value="veg">Veg</option>
+                      <option value="nonveg">Non-Veg</option>
+                    </select>
                   <button
                     onClick={addMenuItem}
                     className="bg-black text-white px-4 py-2 rounded"
@@ -625,22 +790,22 @@ export default function Index() {
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
               <div>
-                <h3>🆕 Orders</h3>
+                <h3> Orders</h3>
                 {renderOrders(placedOrders)}
               </div>
 
               <div>
-                <h3>👨‍🍳 Preparing</h3>
+                <h3> Preparing</h3>
                 {renderOrders(preparingOrders)}
               </div>
 
               <div>
-                <h3>🔔 Ready</h3>
+                <h3> Ready</h3>
                 {renderOrders(readyOrders)}
               </div>
 
               <div>
-                <h3>✅ Collected</h3>
+                <h3> Collected</h3>
                 {renderOrders(collectedOrders)}
               </div>
             </div>
