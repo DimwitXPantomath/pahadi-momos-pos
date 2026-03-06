@@ -47,7 +47,7 @@ export default function Index() {
   ];
 
   useEffect(() => {
-    if (categories.length > 0) {
+    if (categories.length > 0 && !activeCategory) {
       setActiveCategory(categories[0].id);
     }
   }, [categories]);
