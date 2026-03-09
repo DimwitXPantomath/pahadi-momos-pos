@@ -33,7 +33,7 @@ export default function Index() {
   const [newCategoryName, setNewCategoryName] = useState("");
   const [newItemIsVeg, setNewItemIsVeg] = useState(true);
   const [vegFilter, setVegFilter] = useState<"all" | "veg" | "nonveg">("all");
-
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const placedOrders = orders.filter(o => o.status === OrderStatus.PLACED);
   const preparingOrders = orders.filter(o => o.status === OrderStatus.PREPARING);
@@ -412,13 +412,57 @@ export default function Index() {
   return (
     <div style={{ display: "flex", height: "100vh" }}>
 
+    <div className="flex items-center mb-4 md:hidden">
+      <button
+        onClick={() => setSidebarOpen(true)}
+        className="text-2xl"
+      >
+        ☰
+      </button>
+
+      <h1 className="ml-4 font-bold text-lg">
+        PAHADI MOMOS
+      </h1>
+    </div>
+
+    {sidebarOpen && (
+      <div
+        className="fixed inset-0 bg-black bg-opacity-40 md:hidden z-40"
+        onClick={() => setSidebarOpen(false)}
+      />
+    )}
+
       {/* SIDEBAR */}
       <div
-        className="bg-black text-white flex flex-col justify-between p-4 w-16 md:w-56"
+        className={`
+          fixed md:relative
+          top-0 left-0
+          h-full
+          w-56
+          bg-black text-white
+          flex flex-col justify-between
+          p-5
+          transform
+          transition-transform duration-300
+          ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}
+          md:translate-x-0
+          z-50
+        `}
       >
+        <div className="flex justify-between items-center mb-6 md:hidden">
+          <h2 className="font-bold">PAHADI MOMOS</h2>
+
+          <button
+            onClick={() => setSidebarOpen(false)}
+            className="text-xl"
+          >
+            ✕
+          </button>
+        </div>
+
         {/* TOP SECTION */}
         <div>
-          <h2 style={{ marginBottom: 30, fontWeight: "bold" }}>
+          <h2 className="hidden md:block mb-8 font-bold">
             PAHADI MOMOS
           </h2>
 
@@ -528,192 +572,186 @@ export default function Index() {
 
         {/* MENU VIEW */}
         {view === "menu" && (
-          <>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
-            {/* ORDER MODE */}
-            {menuMode === "order" && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* LEFT SIDE - MENU */}
+            <div>
 
-                {/* LEFT SIDE - MENU */}
-                <div>
+              {/* Veg Filter */}
+              <div className="flex gap-3 mb-4 flex-wrap">
+                <button
+                  onClick={() => setVegFilter("all")}
+                  className={`px-3 py-1 rounded ${
+                    vegFilter === "all" ? "bg-black text-white" : "bg-gray-200"
+                  }`}
+                >
+                  All
+                </button>
 
-                  {/* Veg Filter */}
-                  <div className="flex gap-3 mb-4 flex-wrap">
-                    <button
-                      onClick={() => setVegFilter("all")}
-                      className={`px-3 py-1 rounded ${
-                        vegFilter === "all" ? "bg-black text-white" : "bg-gray-200"
-                      }`}
+                <button
+                  onClick={() => setVegFilter("veg")}
+                  className={`px-3 py-1 rounded ${
+                    vegFilter === "veg" ? "bg-green-600 text-white" : "bg-gray-200"
+                  }`}
+                >
+                  Veg
+                </button>
+
+                <button
+                  onClick={() => setVegFilter("nonveg")}
+                  className={`px-3 py-1 rounded ${
+                    vegFilter === "nonveg" ? "bg-red-600 text-white" : "bg-gray-200"
+                  }`}
+                >
+                  Non-Veg
+                </button>
+              </div>
+
+              {/* Category Buttons */}
+              <div className="flex gap-2 mb-4 overflow-x-auto">
+                {categories.map(cat => (
+                  <button
+                    key={cat.id}
+                    onClick={() => setActiveCategory(cat.id)}
+                    className={`px-4 py-2 rounded-lg font-medium ${
+                      activeCategory === cat.id
+                        ? "bg-black text-white"
+                        : "bg-gray-200"
+                    }`}
+                  >
+                    {cat.name}
+                  </button>
+                ))}
+              </div>
+
+              {/* Menu Items */}
+              <div className="space-y-3">
+                {menuItems
+                  .filter(item => {
+                    if (item.category_id !== activeCategory) return false
+                    if (!item.available) return false
+
+                    if (vegFilter === "veg" && !item.is_veg) return false
+                    if (vegFilter === "nonveg" && item.is_veg) return false
+
+                    return true
+                  })
+                  .map(item => (
+                    <div
+                      key={item.id}
+                      className="flex justify-between items-center border rounded-lg p-4 text-lg"
                     >
-                      All
-                    </button>
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`w-3 h-3 rounded-full ${
+                            item.is_veg ? "bg-green-600" : "bg-red-600"
+                          }`}
+                        />
 
-                    <button
-                      onClick={() => setVegFilter("veg")}
-                      className={`px-3 py-1 rounded ${
-                        vegFilter === "veg" ? "bg-green-600 text-white" : "bg-gray-200"
-                      }`}
-                    >
-                      Veg
-                    </button>
-
-                    <button
-                      onClick={() => setVegFilter("nonveg")}
-                      className={`px-3 py-1 rounded ${
-                        vegFilter === "nonveg" ? "bg-red-600 text-white" : "bg-gray-200"
-                      }`}
-                    >
-                      Non-Veg
-                    </button>
-                  </div>
-
-                  {/* Category Buttons */}
-                  <div className="flex gap-2 mb-4 overflow-x-auto">
-                    {categories.map(cat => (
-                      <button
-                        key={cat.id}
-                        onClick={() => setActiveCategory(cat.id)}
-                        className={`px-4 py-2 rounded-lg font-medium ${
-                          activeCategory === cat.id
-                            ? "bg-black text-white"
-                            : "bg-gray-200"
-                        }`}
-                      >
-                        {cat.name}
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* Menu Items */}
-                  <div className="space-y-3">
-                    {menuItems
-                      .filter(item => {
-                        if (item.category_id !== activeCategory) return false
-                        if (!item.available) return false
-
-                        if (vegFilter === "veg" && !item.is_veg) return false
-                        if (vegFilter === "nonveg" && item.is_veg) return false
-
-                        return true
-                      })
-                      .map(item => (
-                        <div
-                          key={item.id}
-                          className="flex justify-between items-center border rounded-lg p-4 text-lg"
-                        >
-                          <div className="flex items-center gap-2">
-                            <span
-                              className={`w-3 h-3 rounded-full ${
-                                item.is_veg ? "bg-green-600" : "bg-red-600"
-                              }`}
-                            />
-
-                            <div>
-                              <p className="font-semibold">{item.name}</p>
-                              <p className="text-sm text-gray-500">₹{item.price}</p>
-                            </div>
-                          </div>
-
-                          <button
-                            onClick={() => addToCart(item)}
-                            className="bg-black text-white px-4 py-2 rounded-lg"
-                          >
-                            Add
-                          </button>
-                        </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* RIGHT SIDE - CART */}
-                <div className="border rounded-lg p-4 sticky top-0">
-
-                  <h3 className="text-lg font-semibold mb-4">Cart</h3>
-
-                  {cart.length === 0 && (
-                    <p className="text-gray-500">No items added</p>
-                  )}
-
-                  <div className="space-y-3">
-                    {cart.map(i => (
-                      <div
-                        key={i.id}
-                        className="flex justify-between items-center"
-                      >
                         <div>
-                          <p>{i.name}</p>
-                          <p className="text-sm text-gray-500">
-                            ₹{i.price} × {i.quantity}
-                          </p>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => decreaseQty(i.id)}
-                            className="px-3 py-1 bg-gray-200 rounded"
-                          >
-                            -
-                          </button>
-
-                          <span>{i.quantity}</span>
-
-                          <button
-                            onClick={() => increaseQty(i.id)}
-                            className="px-3 py-1 bg-gray-200 rounded"
-                          >
-                            +
-                          </button>
+                          <p className="font-semibold">{item.name}</p>
+                          <p className="text-sm text-gray-500">₹{item.price}</p>
                         </div>
                       </div>
-                    ))}
-                  </div>
 
-                  {/* Bill Summary */}
-                  <div className="border-t mt-4 pt-4 space-y-2">
-
-                    <div className="flex justify-between">
-                      <span>Subtotal</span>
-                      <span>₹{subtotal.toFixed(2)}</span>
+                      <button
+                        onClick={() => addToCart(item)}
+                        className="bg-black text-white px-4 py-2 rounded-lg"
+                      >
+                        Add
+                      </button>
                     </div>
+                ))}
+              </div>
+            </div>
 
-                    <div className="flex justify-between">
-                      <span>GST (5%)</span>
-                      <span>₹{gst.toFixed(2)}</span>
-                    </div>
+            {/* RIGHT SIDE - CART */}
+            <div className="border rounded-lg p-4 sticky top-0">
 
-                    <div className="flex justify-between font-bold text-lg">
-                      <span>Total</span>
-                      <span>₹{grandTotal.toFixed(2)}</span>
-                    </div>
-                  </div>
+              <h3 className="text-lg font-semibold mb-4">Cart</h3>
 
-                  {/* Payment */}
-                  <div className="mt-4">
-                    <label className="font-bold">Payment Method</label>
+              {cart.length === 0 && (
+                <p className="text-gray-500">No items added</p>
+              )}
 
-                    <select
-                      value={paymentMethod}
-                      onChange={(e) =>
-                        setPaymentMethod(e.target.value as "CASH" | "CARD" | "UPI")
-                      }
-                      className="block mt-2 p-2 border rounded w-full"
-                    >
-                      <option value="CASH">Cash</option>
-                      <option value="CARD">Card</option>
-                      <option value="UPI">UPI</option>
-                    </select>
-                  </div>
-
-                  <button
-                    onClick={placeOrder}
-                    className="w-full mt-4 bg-black text-white py-3 rounded-lg font-semibold"
+              <div className="space-y-3">
+                {cart.map(i => (
+                  <div
+                    key={i.id}
+                    className="flex justify-between items-center"
                   >
-                    Place Order
-                  </button>
+                    <div>
+                      <p>{i.name}</p>
+                      <p className="text-sm text-gray-500">
+                        ₹{i.price} × {i.quantity}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => decreaseQty(i.id)}
+                        className="px-3 py-1 bg-gray-200 rounded"
+                      >
+                        -
+                      </button>
+
+                      <span>{i.quantity}</span>
+
+                      <button
+                        onClick={() => increaseQty(i.id)}
+                        className="px-3 py-1 bg-gray-200 rounded"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Bill Summary */}
+              <div className="border-t mt-4 pt-4 space-y-2">
+
+                <div className="flex justify-between">
+                  <span>Subtotal</span>
+                  <span>₹{subtotal.toFixed(2)}</span>
+                </div>
+
+                <div className="flex justify-between">
+                  <span>GST (5%)</span>
+                  <span>₹{gst.toFixed(2)}</span>
+                </div>
+
+                <div className="flex justify-between font-bold text-lg">
+                  <span>Total</span>
+                  <span>₹{grandTotal.toFixed(2)}</span>
                 </div>
               </div>
-            )}
-          </>
+
+              {/* Payment */}
+              <div className="mt-4">
+                <label className="font-bold">Payment Method</label>
+
+                <select
+                  value={paymentMethod}
+                  onChange={(e) =>
+                    setPaymentMethod(e.target.value as "CASH" | "CARD" | "UPI")
+                  }
+                  className="block mt-2 p-2 border rounded w-full"
+                >
+                  <option value="CASH">Cash</option>
+                  <option value="CARD">Card</option>
+                  <option value="UPI">UPI</option>
+                </select>
+              </div>
+
+              <button
+                onClick={placeOrder}
+                className="w-full mt-4 bg-black text-white py-3 rounded-lg font-semibold"
+              >
+                Place Order
+              </button>
+            </div>
+          </div>
         )}
 
         {/* MENU MANAGEMENT MODE */}
