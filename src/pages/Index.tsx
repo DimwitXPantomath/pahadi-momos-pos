@@ -7,12 +7,13 @@ import { OrderStatus } from "@/types/pos";
 import { useEffect } from "react";
 import { useMemo } from "react";
 import { useRef } from "react";
-
 import type { MenuItem } from "@/types/pos";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 
 const OUTLET_ID = "demo-outlet";
 
-type View = "menu" | "orders" | "reports" | "history";
+type View = "menu" | "orders" | "reports" | "history" | "menu_manage";
+
 type PaymentMethod = "CASH" | "CARD" | "UPI";
 
 export default function Index() {
@@ -45,6 +46,12 @@ export default function Index() {
     { label: "Reports", value: "reports" },
     { label: "Order History", value: "history" },
   ];
+
+  const salesData = [
+    { name: "Paneer Momo", sales: 40 },
+    { name: "Chicken Momo", sales: 32 },
+    { name: "Veg Steam", sales: 21 },
+  ];  
 
   useEffect(() => {
     if (categories.length > 0 && !activeCategory) {
@@ -415,65 +422,86 @@ export default function Index() {
             PAHADI MOMOS
           </h2>
 
+          {/* MENU */}
           <div
             onClick={() => setView("menu")}
             style={{
-              marginBottom: 15,
+              marginBottom: 12,
               cursor: "pointer",
-              padding: "8px 12px",
+              padding: "10px 12px",
               borderRadius: 6,
               fontWeight: view === "menu" ? "bold" : "normal",
               background: view === "menu" ? "#f97316" : "transparent",
-              color: view === "menu" ? "white" : "white",
+              color: "white",
             }}
           >
             Menu
           </div>
 
+          {/* ORDERS */}
           <div
             onClick={() => setView("orders")}
             style={{
-              marginBottom: 15,
+              marginBottom: 12,
               cursor: "pointer",
-              padding: "8px 12px",
+              padding: "10px 12px",
               borderRadius: 6,
               fontWeight: view === "orders" ? "bold" : "normal",
               background: view === "orders" ? "#f97316" : "transparent",
-              color: view === "orders" ? "white" : "white",
+              color: "white",
             }}
           >
             Orders
           </div>
-             <div
-                onClick={() => setView("reports")}
-                style={{
-                  marginBottom: 15,
-                  cursor: "pointer",
-                  padding: "8px 12px",
-                  borderRadius: 6,
-                  fontWeight: view === "reports" ? "bold" : "normal",
-                  background: view === "reports" ? "#f97316" : "transparent",
-                  color: view === "reports" ? "white" : "white",
-                }}
-              >
+
+          {/* REPORTS */}
+          <div
+            onClick={() => setView("reports")}
+            style={{
+              marginBottom: 12,
+              cursor: "pointer",
+              padding: "10px 12px",
+              borderRadius: 6,
+              fontWeight: view === "reports" ? "bold" : "normal",
+              background: view === "reports" ? "#f97316" : "transparent",
+              color: "white",
+            }}
+          >
             Reports
           </div>
-          
-             <div
-              onClick={() => setView("history")}
-                style={{
-                  marginBottom: 15,
-                  cursor: "pointer",
-                  padding: "8px 12px",
-                  borderRadius: 6,
-                  fontWeight: view === "history" ? "bold" : "normal",
-                  background: view === "history" ? "#f97316" : "transparent",
-                  color: "white",
-                }}
-              >
-              Order History
-            </div>
+
+          {/* ORDER HISTORY */}
+          <div
+            onClick={() => setView("history")}
+            style={{
+              marginBottom: 12,
+              cursor: "pointer",
+              padding: "10px 12px",
+              borderRadius: 6,
+              fontWeight: view === "history" ? "bold" : "normal",
+              background: view === "history" ? "#f97316" : "transparent",
+              color: "white",
+            }}
+          >
+            Order History
           </div>
+        </div>
+        
+        {/* MENU MANAGE */}
+        <div
+          onClick={() => setView("menu_manage")}
+          style={{
+            marginBottom: 12,
+            cursor: "pointer",
+            padding: "10px 12px",
+            borderRadius: 6,
+            fontWeight: view === "menu_manage" ? "bold" : "normal",
+            background: view === "menu_manage" ? "#f97316" : "transparent",
+            color: "white",
+          }}
+        >
+          Menu Management
+        </div>
 
         {/* BOTTOM SECTION */}
         <div style={{
@@ -501,26 +529,6 @@ export default function Index() {
         {/* MENU VIEW */}
         {view === "menu" && (
           <>
-            {/* Toggle */}
-            <div className="flex gap-4 mb-4">
-              <button
-                onClick={() => setMenuMode("order")}
-                className={`px-4 py-2 rounded ${
-                  menuMode === "order" ? "bg-black text-white" : "bg-gray-200"
-                }`}
-              >
-                Order Mode
-              </button>
-
-              <button
-                onClick={() => setMenuMode("manage")}
-                className={`px-4 py-2 rounded ${
-                  menuMode === "manage" ? "bg-black text-white" : "bg-gray-200"
-                }`}
-              >
-                Manage Menu
-              </button>
-            </div>
 
             {/* ORDER MODE */}
             {menuMode === "order" && (
@@ -677,7 +685,6 @@ export default function Index() {
                       <span>Total</span>
                       <span>₹{grandTotal.toFixed(2)}</span>
                     </div>
-
                   </div>
 
                   {/* Payment */}
@@ -703,143 +710,98 @@ export default function Index() {
                   >
                     Place Order
                   </button>
-
                 </div>
-
-              </div>
-            )}
-
-            {/* MANAGE MODE */}
-            {menuMode === "manage" && (
-              <div>
-                <div className="mb-6 border rounded p-4">
-                  <h3 className="font-semibold mb-3">Add Category</h3>
-
-                  <div className="flex gap-3">
-                    <input
-                      placeholder="Category name"
-                      value={newCategoryName}
-                      onChange={(e) => setNewCategoryName(e.target.value)}
-                      className="border p-2 rounded w-full"
-                    />
-
-                    <button
-                      onClick={addCategory}
-                      className="bg-black text-white px-4 py-2 rounded"
-                    >
-                      Add
-                    </button>
-                  </div>
-                </div>
-                <div className="mb-6 border rounded p-4">
-                  <h3 className="font-semibold mb-3">Add New Item</h3>
-
-                  <div className="flex gap-3 mb-3">
-                    <input
-                      placeholder="Item name"
-                      value={newItemName}
-                      onChange={(e) => setNewItemName(e.target.value)}
-                      className="border p-2 rounded w-full"
-                    />
-
-                    <input
-                      type="number"
-                      placeholder="Price"
-                      value={newItemPrice}
-                      onChange={(e) => setNewItemPrice(e.target.value)}
-                      className="border p-2 rounded w-32"
-                    />
-                  </div>
-
-                  <select
-                    value={newItemCategory}
-                    onChange={(e) => setNewItemCategory(e.target.value)}
-                    className="border p-2 rounded w-full mb-3"
-                  >
-                    <option value="">Select Category</option>
-                    {categories.map(cat => (
-                      <option key={cat.id} value={cat.id}>
-                        {cat.name}
-                      </option>
-                    ))}
-                  </select>
-                    <select
-                      value={newItemIsVeg ? "veg" : "nonveg"}
-                      onChange={(e) =>
-                        setNewItemIsVeg(e.target.value === "veg")
-                      }
-                      className="border p-2 rounded w-full mb-3"
-                    >
-                      <option value="veg">Veg</option>
-                      <option value="nonveg">Non-Veg</option>
-                    </select>
-                  <button
-                    onClick={addMenuItem}
-                    className="bg-black text-white px-4 py-2 rounded"
-                  >
-                    Add Item
-                  </button>
-                </div>
-                {categories.map(cat => (
-                  <div key={cat.id} className="mb-6">
-                    <h3 className="font-semibold mb-2">{cat.name}</h3>
-
-                    {menuItems
-                      .filter(item => item.category_id === cat.id)
-                      .map(item => (
-                        <div
-                          key={item.id}
-                          className="flex justify-between items-center border rounded p-3 mb-2"
-                        >
-                          <div>
-                            <strong>{item.name}</strong>
-                            <div>₹{item.price}</div>
-                          </div>
-
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() => {
-                                const newPrice = prompt(
-                                  "New price",
-                                  item.price.toString()
-                                );
-                                if (newPrice)
-                                  updateMenuItem(item.id, {
-                                    price: Number(newPrice),
-                                  });
-                              }}
-                              className="px-4 py-2 bg-gray-200 rounded-lg text-lg"
-                            >
-                              Edit
-                            </button>
-
-                            <button
-                              onClick={() =>
-                                updateMenuItem(item.id, {
-                                  available: !item.available,
-                                })
-                              }
-                              className="px-4 py-2 bg-gray-200 rounded-lg text-lg"
-                            >
-                              {item.available ? "Disable" : "Enable"}
-                            </button>
-
-                            <button
-                              onClick={() => deleteMenuItem(item.id)}
-                              className="bg-red-500 text-white px-2 rounded"
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </div>
-                    ))}
-                  </div>
-                ))}
               </div>
             )}
           </>
-        )}           
+        )}
+
+        {/* MENU MANAGEMENT MODE */}
+        {view === "menu_manage" && (
+          <div>
+
+            <h2 className="text-xl font-bold mb-6">
+              Menu Management
+            </h2>
+
+            {/* Add Category */}
+            <div className="mb-6 border rounded p-4">
+              <h3 className="font-semibold mb-3">Add Category</h3>
+
+              <div className="flex gap-3">
+                <input
+                  placeholder="Category name"
+                  value={newCategoryName}
+                  onChange={(e) => setNewCategoryName(e.target.value)}
+                  className="border p-2 rounded w-full"
+                />
+
+                <button
+                  onClick={addCategory}
+                  className="bg-black text-white px-4 py-2 rounded"
+                >
+                  Add
+                </button>
+              </div>
+            </div>
+
+            {/* Add Item */}
+            <div className="mb-6 border rounded p-4">
+              <h3 className="font-semibold mb-3">Add New Item</h3>
+
+              <div className="flex gap-3 mb-3">
+                <input
+                  placeholder="Item name"
+                  value={newItemName}
+                  onChange={(e) => setNewItemName(e.target.value)}
+                  className="border p-2 rounded w-full"
+                />
+
+                <input
+                  type="number"
+                  placeholder="Price"
+                  value={newItemPrice}
+                  onChange={(e) => setNewItemPrice(e.target.value)}
+                  className="border p-2 rounded w-32"
+                />
+              </div>
+
+              <select
+                value={newItemCategory}
+                onChange={(e) => setNewItemCategory(e.target.value)}
+                className="border p-2 rounded w-full mb-3"
+              >
+                <option value="">Select Category</option>
+                {categories.map(cat => (
+                  <option key={cat.id} value={cat.id}>
+                    {cat.name}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={newItemIsVeg ? "veg" : "nonveg"}
+                onChange={(e) =>
+                  setNewItemIsVeg(e.target.value === "veg")
+                }
+                className="border p-2 rounded w-full mb-3"
+              >
+                <option value="veg">Veg</option>
+                <option value="nonveg">Non-Veg</option>
+              </select>
+
+              <button
+                onClick={addMenuItem}
+                className="bg-black text-white px-4 py-2 rounded"
+              >
+                Add Item
+              </button>
+            </div>
+
+          </div>
+        )}          
          
+         {/* ORDERS MODE */}
          {view === "orders" && (
           <div>
             <h2 className="text-2xl font-bold mb-4">Orders</h2>
@@ -868,6 +830,7 @@ export default function Index() {
           </div>
         )}
 
+        {/* REPORTS MODE */}
         {view === "reports" && (
           <div>
             <h2 className="text-2xl font-bold mb-4">Reports</h2>
@@ -883,6 +846,66 @@ export default function Index() {
         )}
 
       </div>
+      
+      {/* ORDER HISTORY MODE */}
+      {view === "history" && (
+        <div>
+
+          <h2 style={{ fontSize: 22, marginBottom: 20 }}>
+            Order History
+          </h2>
+
+          {orders.map(order => (
+            <div
+              key={order.id}
+              style={{
+                border: "1px solid #ddd",
+                padding: 12,
+                marginBottom: 10,
+                borderRadius: 6,
+              }}
+            >
+              <strong>#{order.order_no}</strong> — {order.status}
+
+              <div style={{ fontSize: 14 }}>
+                ₹{order.total}
+              </div>
+
+              <div style={{ fontSize: 12 }}>
+                {new Date(order.created_at).toLocaleString()}
+              </div>
+
+            </div>
+          ))}
+
+        </div>
+      )}
+
+      {/* REPORTS MODE */}
+      {view === "reports" && (
+
+        <div>
+
+          <h2 style={{ fontSize: 22, marginBottom: 20 }}>
+            Sales Reports
+          </h2>
+
+          <div style={{ height: 300 }}>
+
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={salesData}>
+                <XAxis dataKey="name" />
+                <YAxis />
+                <Tooltip />
+                <Bar dataKey="sales" fill="#f97316" />
+              </BarChart>
+            </ResponsiveContainer>
+
+          </div>
+
+        </div>
+
+      )}
 
       {/* QR MODAL */}
       {qrOrderId && (
