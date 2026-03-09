@@ -406,16 +406,9 @@ export default function Index() {
     <div style={{ display: "flex", height: "100vh" }}>
 
       {/* SIDEBAR */}
-      <div style={{
-        width: 220,
-        background: "#111",
-        color: "white",
-        display: "flex",
-        flexDirection: "column",
-        justifyContent: "space-between",
-        padding: 20
-      }}>
-
+      <div
+        className="bg-black text-white flex flex-col justify-between p-4 w-16 md:w-56"
+      >
         {/* TOP SECTION */}
         <div>
           <h2 style={{ marginBottom: 30, fontWeight: "bold" }}>
@@ -531,19 +524,17 @@ export default function Index() {
 
             {/* ORDER MODE */}
             {menuMode === "order" && (
-              <div className="grid grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
                 {/* LEFT SIDE - MENU */}
                 <div>
 
-                  {/* 🔵 Veg / Non-Veg Filter */}
-                  <div className="flex gap-3 mb-4">
+                  {/* Veg Filter */}
+                  <div className="flex gap-3 mb-4 flex-wrap">
                     <button
                       onClick={() => setVegFilter("all")}
                       className={`px-3 py-1 rounded ${
-                        vegFilter === "all"
-                          ? "bg-black text-white"
-                          : "bg-gray-200"
+                        vegFilter === "all" ? "bg-black text-white" : "bg-gray-200"
                       }`}
                     >
                       All
@@ -552,9 +543,7 @@ export default function Index() {
                     <button
                       onClick={() => setVegFilter("veg")}
                       className={`px-3 py-1 rounded ${
-                        vegFilter === "veg"
-                          ? "bg-green-600 text-white"
-                          : "bg-gray-200"
+                        vegFilter === "veg" ? "bg-green-600 text-white" : "bg-gray-200"
                       }`}
                     >
                       Veg
@@ -563,17 +552,15 @@ export default function Index() {
                     <button
                       onClick={() => setVegFilter("nonveg")}
                       className={`px-3 py-1 rounded ${
-                        vegFilter === "nonveg"
-                          ? "bg-red-600 text-white"
-                          : "bg-gray-200"
+                        vegFilter === "nonveg" ? "bg-red-600 text-white" : "bg-gray-200"
                       }`}
                     >
                       Non-Veg
                     </button>
                   </div>
 
-                  {/* 🔵 Category Buttons */}
-                  <div className="flex gap-2 mb-4">
+                  {/* Category Buttons */}
+                  <div className="flex gap-2 mb-4 overflow-x-auto">
                     {categories.map(cat => (
                       <button
                         key={cat.id}
@@ -589,49 +576,34 @@ export default function Index() {
                     ))}
                   </div>
 
-                  {/* 🔵 Menu Items */}
+                  {/* Menu Items */}
                   <div className="space-y-3">
                     {menuItems
                       .filter(item => {
-                        if (item.category_id !== activeCategory) return false;
-                        if (!item.available) return false;
+                        if (item.category_id !== activeCategory) return false
+                        if (!item.available) return false
 
-                        if (vegFilter === "veg" && !item.is_veg) return false;
-                        if (vegFilter === "nonveg" && item.is_veg) return false;
+                        if (vegFilter === "veg" && !item.is_veg) return false
+                        if (vegFilter === "nonveg" && item.is_veg) return false
 
-                        return true;
+                        return true
                       })
                       .map(item => (
                         <div
                           key={item.id}
-                          className="flex justify-between items-center border rounded-lg p-4"
+                          className="flex justify-between items-center border rounded-lg p-4 text-lg"
                         >
-                          <div>
-                            <div className="flex items-center gap-2">
-                              {/* Veg / Non-Veg Dot */}
-                              <span
-                                className={`w-4 h-4 border rounded-sm flex items-center justify-center ${
-                                  item.is_veg
-                                    ? "border-green-600"
-                                    : "border-red-600"
-                                }`}
-                              >
-                                <span
-                                  className={`w-2 h-2 rounded-full ${
-                                    item.is_veg
-                                      ? "bg-green-600"
-                                      : "bg-red-600"
-                                  }`}
-                                />
-                              </span>
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`w-3 h-3 rounded-full ${
+                                item.is_veg ? "bg-green-600" : "bg-red-600"
+                              }`}
+                            />
 
-                              <p className="font-semibold">
-                                {item.name}
-                              </p>
+                            <div>
+                              <p className="font-semibold">{item.name}</p>
+                              <p className="text-sm text-gray-500">₹{item.price}</p>
                             </div>
-                            <p className="text-sm text-gray-500">
-                              ₹{item.price}
-                            </p>
                           </div>
 
                           <button
@@ -646,8 +618,92 @@ export default function Index() {
                 </div>
 
                 {/* RIGHT SIDE - CART */}
-                <div className="border rounded-lg p-4">
-                  {/* your existing cart code here */}
+                <div className="border rounded-lg p-4 sticky top-0">
+
+                  <h3 className="text-lg font-semibold mb-4">Cart</h3>
+
+                  {cart.length === 0 && (
+                    <p className="text-gray-500">No items added</p>
+                  )}
+
+                  <div className="space-y-3">
+                    {cart.map(i => (
+                      <div
+                        key={i.id}
+                        className="flex justify-between items-center"
+                      >
+                        <div>
+                          <p>{i.name}</p>
+                          <p className="text-sm text-gray-500">
+                            ₹{i.price} × {i.quantity}
+                          </p>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => decreaseQty(i.id)}
+                            className="px-3 py-1 bg-gray-200 rounded"
+                          >
+                            -
+                          </button>
+
+                          <span>{i.quantity}</span>
+
+                          <button
+                            onClick={() => increaseQty(i.id)}
+                            className="px-3 py-1 bg-gray-200 rounded"
+                          >
+                            +
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Bill Summary */}
+                  <div className="border-t mt-4 pt-4 space-y-2">
+
+                    <div className="flex justify-between">
+                      <span>Subtotal</span>
+                      <span>₹{subtotal.toFixed(2)}</span>
+                    </div>
+
+                    <div className="flex justify-between">
+                      <span>GST (5%)</span>
+                      <span>₹{gst.toFixed(2)}</span>
+                    </div>
+
+                    <div className="flex justify-between font-bold text-lg">
+                      <span>Total</span>
+                      <span>₹{grandTotal.toFixed(2)}</span>
+                    </div>
+
+                  </div>
+
+                  {/* Payment */}
+                  <div className="mt-4">
+                    <label className="font-bold">Payment Method</label>
+
+                    <select
+                      value={paymentMethod}
+                      onChange={(e) =>
+                        setPaymentMethod(e.target.value as "CASH" | "CARD" | "UPI")
+                      }
+                      className="block mt-2 p-2 border rounded w-full"
+                    >
+                      <option value="CASH">Cash</option>
+                      <option value="CARD">Card</option>
+                      <option value="UPI">UPI</option>
+                    </select>
+                  </div>
+
+                  <button
+                    onClick={placeOrder}
+                    className="w-full mt-4 bg-black text-white py-3 rounded-lg font-semibold"
+                  >
+                    Place Order
+                  </button>
+
                 </div>
 
               </div>
@@ -752,7 +808,7 @@ export default function Index() {
                                     price: Number(newPrice),
                                   });
                               }}
-                              className="bg-gray-200 px-2 rounded"
+                              className="px-4 py-2 bg-gray-200 rounded-lg text-lg"
                             >
                               Edit
                             </button>
@@ -763,7 +819,7 @@ export default function Index() {
                                   available: !item.available,
                                 })
                               }
-                              className="bg-gray-200 px-2 rounded"
+                              className="px-4 py-2 bg-gray-200 rounded-lg text-lg"
                             >
                               {item.available ? "Disable" : "Enable"}
                             </button>
