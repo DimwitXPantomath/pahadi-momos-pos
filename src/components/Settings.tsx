@@ -1,16 +1,35 @@
-type KitchenSettings = {
+type Printer = {
+  id: string
+  name: string
+  role: "BILL" | "KOT" | "BOTH"
+}
+
+type POSSettings = {
   kdsEnabled: boolean
   delayAlertMinutes: number
   soundAlert: boolean
   autoSortOrders: boolean
+  printers: Printer[]
 }
 
 type Props = {
-  settings: KitchenSettings
-  setSettings: React.Dispatch<React.SetStateAction<KitchenSettings>>
+  settings: POSSettings
+  setSettings: React.Dispatch<React.SetStateAction<POSSettings>>
 }
 
 export default function Settings({ settings, setSettings }: Props) {
+  const updatePrinterRole = (id: string, role: string) => {
+
+  const updated = settings.printers.map((p:any) =>
+    p.id === id ? { ...p, role } : p
+  )
+
+  setSettings({
+    ...settings,
+    printers: updated
+  })
+}
+
   return (
     <div>
 
@@ -32,6 +51,36 @@ export default function Settings({ settings, setSettings }: Props) {
           Enable Kitchen Display
         </label>
       </div>
+
+      {/* Printer Setup */}
+      <h3 className="font-bold mt-6 mb-2">
+        Printer Setup
+      </h3>
+
+      {settings.printers?.map((printer:any) => (
+
+        <div
+          key={printer.id}
+          className="flex items-center justify-between mb-3"
+        >
+
+          <span>{printer.name}</span>
+
+          <select
+            value={printer.role}
+            onChange={(e) =>
+              updatePrinterRole(printer.id, e.target.value)
+            }
+            className="border rounded p-1"
+          >
+            <option value="BILL">Bill Printer</option>
+            <option value="KOT">Kitchen Printer</option>
+            <option value="BOTH">Both</option>
+          </select>
+
+        </div>
+
+      ))}
 
       {/* Delay Alert */}
       <div className="mb-4">

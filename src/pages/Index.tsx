@@ -6,6 +6,9 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import type { MenuItem } from "@/types/pos";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import Settings from "@/components/Settings"
+import { printReceipt } from "@/utils/printReceipt"
+import { printKOT } from "@/utils/printKOT"
+import { printOrder } from "@/utils/printManager"
 
 const OUTLET_ID = "demo-outlet";
 
@@ -27,22 +30,23 @@ type Order = {
   payment_method: "CASH" | "CARD" | "UPI"
 }
 
+type Printer = {
+  id: string
+  name: string
+  role: "BILL" | "KOT" | "BOTH"
+}
+
 type POSSettings = {
   kdsEnabled: boolean
   delayAlertMinutes: number
   soundAlert: boolean
   autoSortOrders: boolean
+  printers: Printer[]
 }
 
 type PaymentMethod = "CASH" | "CARD" | "UPI";
 
 export default function Index() {
-  const [settings, setSettings] = useState({
-    kdsEnabled: true,
-    delayAlertMinutes: 10,
-    soundAlert: true,
-    autoSortOrders: true
-  })
   const [cart, setCart] = useState<OrderItem[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [qrOrderId, setQrOrderId] = useState<string | null>(null);
@@ -74,6 +78,20 @@ export default function Index() {
     { label: "Reports", value: "reports" },
     { label: "Order History", value: "history" },
   ];
+
+  const [settings, setSettings] = useState<POSSettings>({
+    kdsEnabled: true,
+    delayAlertMinutes: 10,
+    soundAlert: true,
+    autoSortOrders: true,
+    printers: [
+      {
+        id: "main",
+        name: "Main Printer",
+        role: "BOTH"
+      }
+    ]
+  })
 
   const salesData = useMemo(() => {
 
@@ -315,6 +333,7 @@ export default function Index() {
       return;
     }
 
+    printOrder(data, settings.printers)
     // DO NOT manually setOrders here
     // Realtime will handle insertion
 
