@@ -1,22 +1,48 @@
-
-import { useState } from "react";
 import { supabase } from "@/lib/supabase";
-import type { Order, OrderItem } from "@/types/pos";
+import type { OrderItem } from "../types/pos";
 import QRCode from "react-qr-code";
 import { OrderStatus } from "@/types/pos";
-import { useEffect } from "react";
-import { useMemo } from "react";
-import { useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import type { MenuItem } from "@/types/pos";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import Settings from "@/components/Settings"
 
 const OUTLET_ID = "demo-outlet";
 
-type View = "menu" | "orders" | "reports" | "history" | "menu_manage";
+type View =
+  | "menu"
+  | "orders"
+  | "reports"
+  | "history"
+  | "menu_manage"
+  | "settings";
+
+type Order = {
+  id: string
+  order_no: string
+  total: number
+  status: string
+  created_at: string
+  items: OrderItem[]
+  payment_method: "CASH" | "CARD" | "UPI"
+}
+
+type POSSettings = {
+  kdsEnabled: boolean
+  delayAlertMinutes: number
+  soundAlert: boolean
+  autoSortOrders: boolean
+}
 
 type PaymentMethod = "CASH" | "CARD" | "UPI";
 
 export default function Index() {
+  const [settings, setSettings] = useState({
+    kdsEnabled: true,
+    delayAlertMinutes: 10,
+    soundAlert: true,
+    autoSortOrders: true
+  })
   const [cart, setCart] = useState<OrderItem[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [qrOrderId, setQrOrderId] = useState<string | null>(null);
@@ -34,11 +60,13 @@ export default function Index() {
   const [newItemIsVeg, setNewItemIsVeg] = useState(true);
   const [vegFilter, setVegFilter] = useState<"all" | "veg" | "nonveg">("all");
   const [sidebarOpen, setSidebarOpen] = useState(false);
-
+  const [, setTick] = useState(0)
   const placedOrders = orders.filter(o => o.status === OrderStatus.PLACED);
   const preparingOrders = orders.filter(o => o.status === OrderStatus.PREPARING);
   const readyOrders = orders.filter(o => o.status === OrderStatus.READY);
   const collectedOrders = orders.filter(o => o.status === OrderStatus.COLLECTED);
+
+  const alertedOrdersRef = useRef<Set<string>>(new Set())
 
   const sidebarItems: { label: string; value: View }[] = [
     { label: "Menu", value: "menu" },
@@ -47,11 +75,56 @@ export default function Index() {
     { label: "Order History", value: "history" },
   ];
 
-  const salesData = [
-    { name: "Paneer Momo", sales: 40 },
-    { name: "Chicken Momo", sales: 32 },
-    { name: "Veg Steam", sales: 21 },
-  ];  
+  const salesData = useMemo(() => {
+
+  const itemSales: Record<string, number> = {}
+
+    orders.forEach(order => {
+      if (!order.items) return
+
+      order.items.forEach((item:OrderItem) => {
+        if (!itemSales[item.name]) {
+          itemSales[item.name] = 0
+        }
+
+        itemSales[item.name] += item.quantity
+      })
+    })
+
+    return Object.entries(itemSales).map(([name, qty]) => ({
+      name,
+      sales: qty
+    }))
+
+  }, [orders])  
+
+  const paymentData = useMemo(() => {
+
+    const totals = {
+      CASH: 0,
+      CARD: 0,
+      UPI: 0
+    }
+
+    orders.forEach(order => {
+      totals[order.payment_method as keyof typeof totals] += order.total
+    })
+
+    return [
+      { name: "Cash", value: totals.CASH },
+      { name: "Card", value: totals.CARD },
+      { name: "UPI", value: totals.UPI }
+    ]
+
+  }, [orders])
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setTick(t => t + 1)
+    }, 1000)
+
+    return () => clearInterval(interval)
+  }, [])
 
   useEffect(() => {
     if (categories.length > 0 && !activeCategory) {
@@ -102,7 +175,7 @@ export default function Index() {
     }
   };
 
-  const addToCart = (item: { id: string; name: string; price: number }) => {
+  const addToCart = (item: MenuItem) => {
     setCart((prev) => {
       const existing = prev.find((i) => i.id === item.id);
         if (existing) {
@@ -116,48 +189,62 @@ export default function Index() {
         });
       };
 
-    const renderOrders = (list: Order[]) =>
-      list.map((o) => (
+  const renderOrders = (list: Order[], settings: POSSettings) => {
+    const sorted = settings.autoSortOrders
+      ? [...list].sort(
+          (a, b) =>
+            new Date(a.created_at).getTime() -
+            new Date(b.created_at).getTime()
+        )
+      : list
+
+    return sorted.map((order) => {
+      checkOrderDelay(order)
+
+      return (
         <div
-          key={o.id}
+          key={order.id}
           style={{
             border: "1px solid #ddd",
-            padding: 10,
-            marginTop: 10,
-            borderRadius: 8,
+            padding: 12,
+            marginBottom: 10,
+            borderRadius: 6,
+            borderLeft: `6px solid ${getOrderColor(order.created_at)}`
           }}
         >
           <div>
-            <strong>#{o.order_no}</strong> — {o.status}
+            <strong>#{order.order_no}</strong> — {order.status}
           </div>
 
-          {o.status === OrderStatus.PLACED && (
-            <div style={{ marginTop: 8 }}>
-              {[5, 10, 15].map((min) => (
-                <button
-                  key={min}
-                  onClick={() => startPreparing(o.id, min)}
-                  style={{ marginRight: 6 }}
-                >
-                  {min} min
-                </button>
-              ))}
-            </div>
-          )}
+        {order.status === OrderStatus.PLACED && (
+          <div style={{ marginTop: 8 }}>
+            {[5, 10, 15].map((min) => (
+              <button
+                key={min}
+                onClick={() => startPreparing(order.id, min)}
+                style={{ marginRight: 6 }}
+              >
+                {min} min
+              </button>
+            ))}
+          </div>
+        )}
 
-          {o.status === OrderStatus.PREPARING && (
-            <button onClick={() => markReady(o.id)} style={{ marginTop: 8 }}>
-              Mark Ready
-            </button>
-          )}
+        {order.status === OrderStatus.PREPARING && (
+          <button onClick={() => markReady(order.id)} style={{ marginTop: 8 }}>
+            Mark Ready
+          </button>
+        )}
 
-          {o.status === OrderStatus.READY && (
-            <button onClick={() => collectOrder(o.id)} style={{ marginTop: 8 }}>
-              Collected
-            </button>
-          )}
-        </div>
-      ));
+        {order.status === OrderStatus.READY && (
+          <button onClick={() => collectOrder(order.id)} style={{ marginTop: 8 }}>
+            Collected
+          </button>
+        )}
+      </div>
+      )
+    })
+  }
   
 
   const orderPriority: Record<OrderStatus, number> = {
@@ -398,7 +485,6 @@ export default function Index() {
     };
   }, []);
 
-
   const playNotification = () => {
     if (audioRef.current) {
       audioRef.current.currentTime = 0;
@@ -408,22 +494,77 @@ export default function Index() {
     }
   };
 
+  function getOrderTime(createdAt: string) {
+    const now = new Date()
+    const created = new Date(createdAt)
+
+    const diff = Math.floor((now.getTime() - created.getTime()) / 1000)
+
+    const minutes = Math.floor(diff / 60)
+    const seconds = diff % 60
+
+    return `${minutes}:${seconds.toString().padStart(2, "0")}`
+  }
+
+  function getOrderColor(createdAt: string) {
+    const now = new Date()
+    const created = new Date(createdAt)
+
+    const diff = (now.getTime() - created.getTime()) / 1000
+    const minutes = diff / 60
+
+    if (minutes < 3) return "#22c55e"   // green
+    if (minutes < 6) return "#eab308"   // yellow
+    if (minutes < 10) return "#f97316"  // orange
+    return "#ef4444"                    // red
+  }
+
+  function checkOrderDelay(order: Order) {
+    const now = new Date()
+    const created = new Date(order.created_at)
+
+    const minutes =
+      (now.getTime() - created.getTime()) / 1000 / 60
+
+    if (minutes >= settings.delayAlertMinutes && !alertedOrdersRef.current.has(order.id)) {
+      alertedOrdersRef.current.add(order.id)
+
+      if (audioRef.current) {
+        audioRef.current.play().catch(() => {})
+      }
+    }
+  }
+
+  function getRemainingTime(readyAt: string) {
+    const now = new Date().getTime()
+    const ready = new Date(readyAt).getTime()
+
+    const diff = ready - now
+
+    if (diff <= 0) return "Ready"
+
+    const min = Math.floor(diff / 60000)
+    const sec = Math.floor((diff % 60000) / 1000)
+
+    return `${min}:${sec.toString().padStart(2,"0")}`
+  }
 
   return (
-    <div style={{ display: "flex", height: "100vh" }}>
+      <>
+        {/* MOBILE HEADER */}
+        <div className="flex items-center p-4 border-b bg-white shadow-sm md:hidden">
+          <button
+            onClick={() => setSidebarOpen(true)}
+            className="text-2xl"
+          >
+            ☰
+          </button>
 
-    <div className="flex items-center mb-4 md:hidden">
-      <button
-        onClick={() => setSidebarOpen(true)}
-        className="text-2xl"
-      >
-        ☰
-      </button>
-
-      <h1 className="ml-4 font-bold text-lg">
-        PAHADI MOMOS
-      </h1>
-    </div>
+          <h1 className="ml-4 font-bold text-lg">
+            PAHADI MOMOS
+          </h1>
+        </div>
+      <div className="flex h-[calc(100vh-60px)]">
 
     {sidebarOpen && (
       <div
@@ -529,6 +670,22 @@ export default function Index() {
           >
             Order History
           </div>
+        </div>
+
+          {/* SETTINGS */}
+        <div
+          onClick={() => setView("settings")}
+          style={{
+            marginBottom: 12,
+            cursor: "pointer",
+            padding: "10px 12px",
+            borderRadius: 6,
+            fontWeight: view === "settings" ? "bold" : "normal",
+            background: view === "settings" ? "#f97316" : "transparent",
+            color: "white",
+          }}
+        >
+          Settings
         </div>
         
         {/* MENU MANAGE */}
@@ -745,7 +902,7 @@ export default function Index() {
               </div>
 
               <button
-                onClick={placeOrder}
+                onClick={() => placeOrder()}
                 className="w-full mt-4 bg-black text-white py-3 rounded-lg font-semibold"
               >
                 Place Order
@@ -847,22 +1004,22 @@ export default function Index() {
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
               <div>
                 <h3> Orders</h3>
-                {renderOrders(placedOrders)}
+                {renderOrders(placedOrders, settings)}
               </div>
 
               <div>
                 <h3> Preparing</h3>
-                {renderOrders(preparingOrders)}
+                {renderOrders(preparingOrders, settings)}
               </div>
 
               <div>
                 <h3> Ready</h3>
-                {renderOrders(readyOrders)}
+                {renderOrders(readyOrders, settings)}
               </div>
 
               <div>
                 <h3> Collected</h3>
-                {renderOrders(collectedOrders)}
+                {renderOrders(collectedOrders, settings)}
               </div>
             </div>
           </div>
@@ -909,8 +1066,8 @@ export default function Index() {
                 ₹{order.total}
               </div>
 
-              <div style={{ fontSize: 12 }}>
-                {new Date(order.created_at).toLocaleString()}
+              <div style={{ fontSize: 12, color: "#666" }}>
+                ⏱ {getOrderTime(order.created_at)}
               </div>
 
             </div>
@@ -928,8 +1085,8 @@ export default function Index() {
             Sales Reports
           </h2>
 
+          {/* ITEM SALES CHART */}
           <div style={{ height: 300 }}>
-
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={salesData}>
                 <XAxis dataKey="name" />
@@ -938,11 +1095,32 @@ export default function Index() {
                 <Bar dataKey="sales" fill="#f97316" />
               </BarChart>
             </ResponsiveContainer>
+          </div>
 
+          {/* PAYMENT METHOD CHART */}
+          <h3 style={{ marginTop: 40, marginBottom: 10 }}>
+            Payment Methods
+          </h3>
+
+          <div style={{ height: 300 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={paymentData}>
+                <XAxis dataKey="name" />
+                <YAxis />
+                <Tooltip />
+                <Bar dataKey="value" fill="#22c55e" />
+              </BarChart>
+            </ResponsiveContainer>
           </div>
 
         </div>
+      )}
 
+      {view === "settings" && (
+        <Settings
+          settings={settings}
+          setSettings={setSettings}
+        />
       )}
 
       {/* QR MODAL */}
@@ -994,5 +1172,6 @@ export default function Index() {
         preload="auto"
       />
     </div>
+    </>   
   );
 }
