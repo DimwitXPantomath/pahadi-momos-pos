@@ -14,6 +14,7 @@ export interface CartItem {
   price: number;
   quantity: number;
   category?: string;
+  size?: string
 };
 
 export interface OrderItem {
@@ -22,6 +23,8 @@ export interface OrderItem {
   price: number;
   quantity: number;
   category?: string;
+  size?: string
+  addons?: MenuAddon[]
 };
 
 export type OutletInfo = {
@@ -60,5 +63,21 @@ export type MenuItem = {
   available: boolean;
   created_at?: string;
   is_veg: boolean;
+  sizes?: MenuItemSize[]
+  addons?: MenuAddon[]
 };
 
+export type MenuItemSize = {
+  label: string
+  price: number
+}
+
+export type MenuSize = {
+  label: string
+  price: number
+}
+
+export type MenuAddon = {
+  name: string
+  price: number
+}

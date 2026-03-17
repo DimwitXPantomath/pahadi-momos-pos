@@ -49,6 +49,7 @@ type PaymentMethod = "CASH" | "CARD" | "UPI";
 export default function Index() {
   const [cart, setCart] = useState<OrderItem[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
+  const [sizeSelectorItem, setSizeSelectorItem] = useState<MenuItem | null>(null)
   const [qrOrderId, setQrOrderId] = useState<string | null>(null);
   const [view, setView] = useState<View>("menu");
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -69,8 +70,14 @@ export default function Index() {
   const preparingOrders = orders.filter(o => o.status === OrderStatus.PREPARING);
   const readyOrders = orders.filter(o => o.status === OrderStatus.READY);
   const collectedOrders = orders.filter(o => o.status === OrderStatus.COLLECTED);
-
+  const [selectedAddons, setSelectedAddons] = useState<{ name: string; price: number }[]>([])
+  const [selectedSize, setSelectedSize] = useState<{ label: string; price: number } | null>(null)
+  const addons = sizeSelectorItem?.addons ?? []
+  const [manageCategory, setManageCategory] = useState<string | null>(null)
+  
   const alertedOrdersRef = useRef<Set<string>>(new Set())
+
+  const [mostOrdered, setMostOrdered] = useState<MenuItem[]>([]);
 
   const sidebarItems: { label: string; value: View }[] = [
     { label: "Menu", value: "menu" },
@@ -145,6 +152,18 @@ export default function Index() {
   }, [])
 
   useEffect(() => {
+    if (menuItems.length > 0) {
+      fetchMostOrdered();
+    }
+  }, [menuItems]);
+
+  useEffect(() => {
+    if (categories.length > 0 && !manageCategory) {
+      setManageCategory(categories[0].id)
+    }
+  }, [categories])
+
+  useEffect(() => {
     if (categories.length > 0 && !activeCategory) {
       setActiveCategory(categories[0].id);
     }
@@ -179,33 +198,95 @@ export default function Index() {
   };
 
   const addCategory = async () => {
-    if (!newCategoryName) return;
+
+    if (!newCategoryName) return
+
+    const exists = categories.find(
+      c => c.name.toLowerCase() === newCategoryName.toLowerCase()
+    )
+
+    if (exists) {
+      alert("Category already exists")
+      return
+    }
 
     const { data, error } = await supabase
       .from("categories")
       .insert({ name: newCategoryName })
       .select()
-      .single();
+      .single()
 
     if (!error && data) {
-      setCategories(prev => [...prev, data]);
-      setNewCategoryName("");
+      setCategories(prev => [...prev, data])
+      setNewCategoryName("")
     }
-  };
 
-  const addToCart = (item: MenuItem) => {
-    setCart((prev) => {
-      const existing = prev.find((i) => i.id === item.id);
-        if (existing) {
-          return prev.map((i) =>
-            i.id === item.id
-              ? { ...i, quantity: i.quantity + 1 }
-              : i
-            );
-          }
-          return [...prev, { ...item, quantity: 1 }];
-        });
-      };
+  }
+
+  const deleteCategory = async (id: string) => {
+
+    const confirmDelete = confirm("Delete this category?")
+
+    if (!confirmDelete) return
+
+    const { error } = await supabase
+      .from("categories")
+      .delete()
+      .eq("id", id)
+
+    if (!error) {
+      setCategories(prev =>
+        prev.filter(c => c.id !== id)
+      )
+    }
+
+  }
+
+  const addToCart = (
+  item: MenuItem,
+  size?: { label: string; price: number },
+  addons: { name: string; price: number }[] = []
+) => {
+
+  const addonPrice = addons.reduce((sum, a) => sum + a.price, 0)
+
+  const itemPrice = (size ? size.price : item.price) + addonPrice
+
+  const itemName =
+    item.name +
+    (size ? ` (${size.label})` : "") +
+    (addons.length ? ` + ${addons.map(a => a.name).join(", ")}` : "")
+
+  const itemId =
+    item.id +
+    (size ? `-${size.label}` : "") +
+    (addons.length ? `-${addons.map(a => a.name).join("-")}` : "")
+
+  setCart(prev => {
+
+    const existing = prev.find(i => i.id === itemId)
+
+    if (existing) {
+      return prev.map(i =>
+        i.id === itemId
+          ? { ...i, quantity: i.quantity + 1 }
+          : i
+      )
+    }
+
+    return [
+      ...prev,
+      {
+        id: itemId,
+        name: itemName,
+        price: itemPrice,
+        quantity: 1
+      }
+    ]
+
+  })
+
+}
 
   const renderOrders = (list: Order[], settings: POSSettings) => {
     const sorted = settings.autoSortOrders
@@ -333,6 +414,21 @@ export default function Index() {
       return;
     }
 
+    const orderItemsPayload = cart.map(item => ({
+      order_id: data.id,
+      outlet_id: OUTLET_ID,
+      item_id: item.id,
+      quantity: item.quantity,
+    }));
+
+    const { error: itemError } = await supabase
+      .from("order_items")
+      .insert(orderItemsPayload);
+
+    if (itemError) {
+      console.error("Order items error:", itemError);
+    }
+
     printOrder(data, settings.printers)
     // DO NOT manually setOrders here
     // Realtime will handle insertion
@@ -340,8 +436,42 @@ export default function Index() {
     setQrOrderId(data.id);
     setView("orders");
     setCart([]);
+    fetchMostOrdered();
   };
 
+  const fetchMostOrdered = async () => {
+    const { data, error } = await supabase
+      .from("order_items")
+      .select("item_id, quantity")
+      .eq("outlet_id", OUTLET_ID);
+
+    if (error) {
+      console.error(error);
+      return;
+    }
+
+    if (!data) return;
+
+    // ✅ FIX TYPE
+    const countMap: Record<string, number> = {};
+
+    data.forEach((item: { item_id: string; quantity: number }) => {
+      if (!countMap[item.item_id]) {
+        countMap[item.item_id] = 0;
+      }
+      countMap[item.item_id] += item.quantity;
+    });
+
+    const sorted = Object.entries(countMap)
+      .sort((a, b) => (b[1] as number) - (a[1] as number))
+      .slice(0, 10);
+
+    const finalItems = sorted
+      .map(([id]) => menuItems.find(m => m.id === id))
+      .filter(Boolean);
+
+    setMostOrdered(finalItems.filter(Boolean) as MenuItem[]);
+  };
 
   const startPreparing = async (orderId: string, minutes: number) => {
     const readyAt = new Date(
@@ -441,6 +571,43 @@ export default function Index() {
     }
   };
 
+  const toggleAvailability = async (id: string, current: boolean) => {
+
+    const { data, error } = await supabase
+      .from("menu_items")
+      .update({ available: !current })
+      .eq("id", id)
+      .select()
+      .single()
+
+    if (!error && data) {
+      setMenuItems(prev =>
+        prev.map(item =>
+          item.id === id ? data : item
+        )
+      )
+    }
+
+  }
+
+  const playNotification = () => {
+    if (audioRef.current) {
+      audioRef.current.currentTime = 0;
+      audioRef.current.play().catch(err => {
+        console.log("Audio blocked:", err);
+      });
+    }
+  };
+
+  const addonTotal = selectedAddons.reduce(
+    (sum, a) => sum + a.price,
+    0
+  )
+
+  const basePrice = selectedSize?.price ?? sizeSelectorItem?.price ?? 0
+
+  const totalPrice = basePrice + addonTotal
+
   useEffect(() => {
     const fetchMenu = async () => {
       const { data } = await supabase
@@ -503,15 +670,6 @@ export default function Index() {
       supabase.removeChannel(channel);
     };
   }, []);
-
-  const playNotification = () => {
-    if (audioRef.current) {
-      audioRef.current.currentTime = 0;
-      audioRef.current.play().catch(err => {
-        console.log("Audio blocked:", err);
-      });
-    }
-  };
 
   function getOrderTime(createdAt: string) {
     const now = new Date()
@@ -583,7 +741,11 @@ export default function Index() {
             PAHADI MOMOS
           </h1>
         </div>
-      <div className="flex h-[calc(100vh-60px)]">
+      <div
+        className={`flex-1 p-6 overflow-y-auto transition-all duration-300 ${
+          sidebarOpen ? "md:ml-56" : ""
+        }`}
+      >
 
     {sidebarOpen && (
       <div
@@ -628,7 +790,10 @@ export default function Index() {
 
           {/* MENU */}
           <div
-            onClick={() => setView("menu")}
+            onClick={() => {
+              setView("menu")
+              setSidebarOpen(false)
+            }}
             style={{
               marginBottom: 12,
               cursor: "pointer",
@@ -644,7 +809,10 @@ export default function Index() {
 
           {/* ORDERS */}
           <div
-            onClick={() => setView("orders")}
+            onClick={() => {
+              setView("orders")
+              setSidebarOpen(false)
+            }}
             style={{
               marginBottom: 12,
               cursor: "pointer",
@@ -660,7 +828,10 @@ export default function Index() {
 
           {/* REPORTS */}
           <div
-            onClick={() => setView("reports")}
+            onClick={() => {
+              setView("reports")
+              setSidebarOpen(false)
+            }}
             style={{
               marginBottom: 12,
               cursor: "pointer",
@@ -676,7 +847,10 @@ export default function Index() {
 
           {/* ORDER HISTORY */}
           <div
-            onClick={() => setView("history")}
+            onClick={() => {
+              setView("history")
+              setSidebarOpen(false)
+            }}
             style={{
               marginBottom: 12,
               cursor: "pointer",
@@ -693,7 +867,10 @@ export default function Index() {
 
           {/* SETTINGS */}
         <div
-          onClick={() => setView("settings")}
+          onClick={() => {
+            setView("settings")
+            setSidebarOpen(false)
+          }}
           style={{
             marginBottom: 12,
             cursor: "pointer",
@@ -709,7 +886,10 @@ export default function Index() {
         
         {/* MENU MANAGE */}
         <div
-          onClick={() => setView("menu_manage")}
+          onClick={() => {
+            setView("menu_manage")
+            setSidebarOpen(false)
+          }}
           style={{
             marginBottom: 12,
             cursor: "pointer",
@@ -800,6 +980,27 @@ export default function Index() {
                 ))}
               </div>
 
+              <div style={{ marginBottom: 10 }}>
+                <h3>⭐ Most Ordered</h3>
+
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  {mostOrdered.map(item => (
+                    <button
+                      key={item.id}
+                      onClick={() => addToCart(item)}
+                      style={{
+                        padding: "10px",
+                        background: "#ffe58a",
+                        borderRadius: "8px",
+                        border: "none"
+                      }}
+                    >
+                      {item.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               {/* Menu Items */}
               <div className="space-y-3">
                 {menuItems
@@ -818,6 +1019,7 @@ export default function Index() {
                       className="flex justify-between items-center border rounded-lg p-4 text-lg"
                     >
                       <div className="flex items-center gap-2">
+
                         <span
                           className={`w-3 h-3 rounded-full ${
                             item.is_veg ? "bg-green-600" : "bg-red-600"
@@ -825,17 +1027,108 @@ export default function Index() {
                         />
 
                         <div>
+
                           <p className="font-semibold">{item.name}</p>
-                          <p className="text-sm text-gray-500">₹{item.price}</p>
+
+                          <p className="text-sm text-gray-500">
+                            ₹{item.price}
+                          </p>
+
+                          <button
+                            onClick={() => toggleAvailability(item.id, item.available)}
+                            className={`text-xs mt-1 ${
+                              item.available ? "text-green-600" : "text-red-600"
+                            }`}
+                          >
+                            {item.available ? "🟢 Available" : "🔴 Out of Stock"}
+                          </button>
+
+                            {!item.available && (
+                              <p className="text-xs text-red-500 mt-1">
+                                Item currently unavailable
+                              </p>
+                            )}
+
                         </div>
+
                       </div>
 
+                    {item.sizes ? (
+
+                      <div className="flex gap-2 flex-wrap">
+
+                        {item.sizes.map(size => {
+
+                          const cartItem = cart.find(
+                            i => i.id === `${item.id}-${size.label}`
+                          )
+
+                          if (cartItem) {
+
+                            return (
+
+                              <div
+                                key={size.label}
+                                className="flex items-center gap-2"
+                              >
+
+                                <button
+                                  onClick={() => decreaseQty(cartItem.id)}
+                                  className="px-2 py-1 bg-gray-200 rounded"
+                                >
+                                  -
+                                </button>
+
+                                <span className="text-sm font-semibold">
+                                  {cartItem.quantity}
+                                </span>
+
+                                <button
+                                  onClick={() => addToCart(item, size)}
+                                  className="px-2 py-1 bg-black text-white rounded"
+                                >
+                                  +
+                                </button>
+
+                              </div>
+
+                            )
+
+                          }
+
+                          return (
+
+                            <button
+                              key={size.label}
+                              disabled={!item.available}
+                              onClick={() => addToCart(item, size)}
+                              className={`px-3 py-2 rounded text-sm ${
+                                item.available
+                                  ? "bg-black text-white"
+                                  : "bg-gray-300 text-gray-500 cursor-not-allowed"
+                              }`}
+                            >
+                              {size.label}
+                            </button>
+
+                          )
+
+                        })}
+
+                      </div>
+
+                    ) : (
+
                       <button
+                        disabled={!item.available}
                         onClick={() => addToCart(item)}
                         className="bg-black text-white px-4 py-2 rounded-lg"
                       >
                         Add
                       </button>
+
+                    )}
+
                     </div>
                 ))}
               </div>
@@ -851,6 +1144,54 @@ export default function Index() {
               )}
 
               <div className="space-y-3">
+                {sizeSelectorItem?.addons && sizeSelectorItem.addons.length > 0 && (
+
+                  <div className="mt-4">
+
+                    <h4 className="font-semibold mb-2">
+                      Add-ons
+                    </h4>
+
+                    {sizeSelectorItem.addons?.map(addon => {
+
+                      const selected = selectedAddons.find(a => a.name === addon.name)
+
+                      return (
+
+                        <label
+                          key={addon.name}
+                          className="flex justify-between items-center border rounded p-2 mb-2"
+                        >
+
+                          <span>
+                            {addon.name}
+                          </span>
+
+                          <input
+                            type="checkbox"
+                            checked={!!selected}
+                            onChange={() => {
+
+                              if (selected) {
+                                setSelectedAddons(prev =>
+                                  prev.filter(a => a.name !== addon.name)
+                                )
+                              } else {
+                                setSelectedAddons(prev => [...prev, addon])
+                              }
+
+                            }}
+                          />
+
+                        </label>
+
+                      )
+
+                    })}
+
+                  </div>
+
+                )}
                 {cart.map(i => (
                   <div
                     key={i.id}
@@ -959,6 +1300,76 @@ export default function Index() {
               </div>
             </div>
 
+
+          {/* Existing Menu Items */}
+
+            <div className="grid grid-cols-3 gap-6">
+
+              {/* LEFT: Categories */}
+
+              <div className="border rounded p-4">
+
+                <h3 className="font-semibold mb-3">
+                  Categories
+                </h3>
+
+                {categories.map(cat => (
+
+                  <div
+                    key={cat.id}
+                    onClick={() => setManageCategory(cat.id)}
+                    className={`p-2 rounded cursor-pointer mb-2 ${
+                      manageCategory === cat.id
+                        ? "bg-black text-white"
+                        : "bg-gray-100"
+                    }`}
+                  >
+                    {cat.name}
+                  </div>
+
+                ))}
+
+              </div>
+
+              {/* RIGHT: Items */}
+
+              <div className="col-span-2 border rounded p-4">
+
+                <h3 className="font-semibold mb-3">
+                  Items
+                </h3>
+
+                {menuItems
+                  .filter(item => item.category_id === manageCategory)
+                  .map(item => (
+
+                    <div
+                      key={item.id}
+                      className="flex justify-between items-center border p-2 mb-2 rounded"
+                    >
+
+                      <div>
+                        <p className="font-semibold">{item.name}</p>
+                        <p className="text-sm text-gray-500">
+                          ₹{item.price}
+                        </p>
+                      </div>
+
+                      <button
+                        onClick={() => deleteMenuItem(item.id)}
+                        className="bg-red-500 text-white px-2 py-1 rounded"
+                      >
+                        Delete
+                      </button>
+
+                    </div>
+
+                ))}
+
+              </div>
+
+            </div>
+
             {/* Add Item */}
             <div className="mb-6 border rounded p-4">
               <h3 className="font-semibold mb-3">Add New Item</h3>
@@ -986,12 +1397,44 @@ export default function Index() {
                 className="border p-2 rounded w-full mb-3"
               >
                 <option value="">Select Category</option>
+
                 {categories.map(cat => (
                   <option key={cat.id} value={cat.id}>
                     {cat.name}
                   </option>
                 ))}
+
               </select>
+
+                {/* Category List */}
+
+                <div className="border rounded p-4 mb-6">
+
+                  <h3 className="font-semibold mb-3">
+                    Categories
+                  </h3>
+
+                  {categories.map(cat => (
+
+                    <div
+                      key={cat.id}
+                      className="flex justify-between items-center border p-2 mb-2 rounded"
+                    >
+
+                      <span>{cat.name}</span>
+
+                      <button
+                        onClick={() => deleteCategory(cat.id)}
+                        className="bg-red-500 text-white px-2 py-1 rounded"
+                      >
+                        Delete
+                      </button>
+
+                    </div>
+
+                  ))}
+
+                </div>
 
               <select
                 value={newItemIsVeg ? "veg" : "nonveg"}
@@ -1140,6 +1583,117 @@ export default function Index() {
           settings={settings}
           setSettings={setSettings}
         />
+      )}
+
+      {sizeSelectorItem && (
+
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+
+          <div
+            className="bg-white rounded-xl p-6 w-80"
+            onClick={(e) => e.stopPropagation()}
+          >
+
+            <h3 className="text-lg font-bold mb-4">
+              {sizeSelectorItem.name}
+            </h3>
+
+            <div className="space-y-3">
+
+              {/* SIZE OPTIONS */}
+
+              {sizeSelectorItem.sizes?.map(size => (
+
+                <button
+                  key={size.label}
+                  onClick={() => setSelectedSize(size)}
+                  className={`w-full border rounded-lg p-3 flex justify-between ${
+                    selectedSize?.label === size.label
+                      ? "bg-black text-white"
+                      : ""
+                  }`}
+                >
+
+                  <span>{size.label}</span>
+                  <span>₹{size.price}</span>
+
+                </button>
+
+              ))}
+
+              {/* ADDONS */}
+
+              {sizeSelectorItem?.addons?.map(addon => {
+
+                const selected = selectedAddons.find(a => a.name === addon.name)
+
+                return (
+
+                  <label
+                    key={addon.name}
+                    className="flex justify-between items-center border rounded p-2"
+                  >
+
+                    <span>{addon.name}</span>
+
+                    <input
+                      type="checkbox"
+                      checked={!!selected}
+                      onChange={() => {
+
+                        if (selected) {
+                          setSelectedAddons(prev =>
+                            prev.filter(a => a.name !== addon.name)
+                          )
+                        } else {
+                          setSelectedAddons(prev => [...prev, addon])
+                        }
+
+                      }}
+                    />
+
+                  </label>
+
+                )
+
+              })}
+
+            </div>
+
+            {/* STEP 5 */}
+
+            <div className="mt-4 border-t pt-3 flex justify-between font-bold">
+
+              <span>Total</span>
+
+              <span>₹{totalPrice}</span>
+
+            </div>
+
+            {/* STEP 6 */}
+
+            <button
+              disabled={!selectedSize}
+              onClick={() => {
+
+                if (!sizeSelectorItem || !selectedSize) return
+
+                addToCart(sizeSelectorItem, selectedSize, selectedAddons)
+
+                setSizeSelectorItem(null)
+
+              }}
+              className="w-full mt-4 bg-black text-white py-3 rounded-lg font-semibold disabled:bg-gray-400"
+            >
+
+              Add to Cart
+
+            </button>
+
+          </div>
+
+        </div>
+
       )}
 
       {/* QR MODAL */}
