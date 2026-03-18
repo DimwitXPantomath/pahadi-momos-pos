@@ -8,6 +8,20 @@ export const categories = [
   "Beverages",
 ];
 
+export type OrderItem = {
+  id: string
+  name: string
+  price: number
+  quantity: number
+  category?: string;
+
+  baseId?: string
+  size?: { label: string; price: number } | null
+  addons?: { name: string; price: number }[]
+
+  station?: string
+}
+
 export interface CartItem {
   id: string;
   name: string;
@@ -15,16 +29,6 @@ export interface CartItem {
   quantity: number;
   category?: string;
   size?: string
-};
-
-export interface OrderItem {
-  id: string;
-  name: string;
-  price: number;
-  quantity: number;
-  category?: string;
-  size?: string
-  addons?: MenuAddon[]
 };
 
 export type OutletInfo = {
@@ -44,6 +48,7 @@ export enum OrderStatus {
 
 export interface Order {
   id: string;
+  token_no: number
   outlet_id: string;
   order_no: number; 
   status: OrderStatus;
@@ -63,8 +68,9 @@ export type MenuItem = {
   available: boolean;
   created_at?: string;
   is_veg: boolean;
-  sizes?: MenuItemSize[]
+  sizes?: MenuSize[]
   addons?: MenuAddon[]
+  station?: "MOMO" | "TANDOOR" | "DRINKS" | "GENERAL"
 };
 
 export type MenuItemSize = {

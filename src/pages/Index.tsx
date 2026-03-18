@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabase";
-import type { OrderItem } from "../types/pos";
+import type { OrderItem } from "@/types/pos";
 import QRCode from "react-qr-code";
 import { OrderStatus } from "@/types/pos";
 import { useState, useEffect, useMemo, useRef } from "react";
@@ -22,12 +22,13 @@ type View =
 
 type Order = {
   id: string
-  order_no: string
+  order_no: number
   total: number
-  status: string
+  status: OrderStatus
   created_at: string
   items: OrderItem[]
-  payment_method: "CASH" | "CARD" | "UPI"
+  token_no: number
+  payment_method?: "CASH" | "CARD" | "UPI"
 }
 
 type Printer = {
@@ -155,7 +156,7 @@ export default function Index() {
     if (menuItems.length > 0) {
       fetchMostOrdered();
     }
-  }, [menuItems]);
+  }, [menuItems, orders]);
 
   useEffect(() => {
     if (categories.length > 0 && !manageCategory) {
@@ -239,62 +240,81 @@ export default function Index() {
         prev.filter(c => c.id !== id)
       )
     }
-
   }
 
   const addToCart = (
-  item: MenuItem,
-  size?: { label: string; price: number },
-  addons: { name: string; price: number }[] = []
-) => {
+    item: MenuItem,
+    size?: { label: string; price: number },
+    addons: { name: string; price: number }[] = []
+  ) => {
 
-  const addonPrice = addons.reduce((sum, a) => sum + a.price, 0)
+    // ✅ Normalize addons (VERY IMPORTANT)
+    const sortedAddons = [...addons].sort((a, b) =>
+      a.name.localeCompare(b.name)
+    )
 
-  const itemPrice = (size ? size.price : item.price) + addonPrice
+    // ✅ Calculate addon price
+    const addonPrice = sortedAddons.reduce((sum, a) => sum + a.price, 0)
 
-  const itemName =
-    item.name +
-    (size ? ` (${size.label})` : "") +
-    (addons.length ? ` + ${addons.map(a => a.name).join(", ")}` : "")
+    // ✅ Final price
+    const basePrice = size ? size.price : item.price
+    const itemPrice = basePrice + addonPrice
 
-  const itemId =
-    item.id +
-    (size ? `-${size.label}` : "") +
-    (addons.length ? `-${addons.map(a => a.name).join("-")}` : "")
+    // ✅ Clean ID (stable)
+    const itemId = [
+      item.id,
+      size?.label || "base",
+      ...sortedAddons.map(a => a.name)
+    ].join("|")
 
-  setCart(prev => {
+    // ✅ Display name (UI only)
+    const itemName =
+      item.name +
+      (size ? ` (${size.label})` : "") +
+      (sortedAddons.length
+        ? ` + ${sortedAddons.map(a => a.name).join(", ")}`
+        : "")
 
-    const existing = prev.find(i => i.id === itemId)
+    setCart(prev => {
+      const existing = prev.find(i => i.id === itemId)
 
-    if (existing) {
-      return prev.map(i =>
-        i.id === itemId
-          ? { ...i, quantity: i.quantity + 1 }
-          : i
-      )
-    }
-
-    return [
-      ...prev,
-      {
-        id: itemId,
-        name: itemName,
-        price: itemPrice,
-        quantity: 1
+      if (existing) {
+        return prev.map(i =>
+          i.id === itemId
+            ? { ...i, quantity: i.quantity + 1 }
+            : i
+        )
       }
-    ]
 
-  })
+      return [
+        ...prev,
+        {
+          id: itemId,
+          name: itemName,
+          price: itemPrice,
+          quantity: 1,
 
-}
+          // ✅ ADD THIS (future-proofing)
+          baseId: item.id,
+          size: size || null,
+          addons: sortedAddons,
+
+          station: item.station || "GENERAL",
+        }
+      ]
+    })
+  }
 
   const renderOrders = (list: Order[], settings: POSSettings) => {
     const sorted = settings.autoSortOrders
-      ? [...list].sort(
-          (a, b) =>
-            new Date(a.created_at).getTime() -
-            new Date(b.created_at).getTime()
-        )
+      ? [...list].sort((a, b) => {
+          const now = Date.now()
+
+          const diffA = now - new Date(a.created_at).getTime()
+          const diffB = now - new Date(b.created_at).getTime()
+
+          return diffB - diffA   // longest waiting first 🔥
+        })
       : list
 
     return sorted.map((order) => {
@@ -312,9 +332,13 @@ export default function Index() {
           }}
         >
           <div>
-            <strong>#{order.order_no}</strong> — {order.status}
+            <strong>Token #{order.token_no}</strong> — {order.status}
           </div>
 
+          <div style={{ fontSize: 12 }}>
+            ⏱ {getOrderTime(order.created_at)}
+          </div>
+          
         {order.status === OrderStatus.PLACED && (
           <div style={{ marginTop: 8 }}>
             {[5, 10, 15].map((min) => (
@@ -336,16 +360,47 @@ export default function Index() {
         )}
 
         {order.status === OrderStatus.READY && (
-          <button onClick={() => collectOrder(order.id)} style={{ marginTop: 8 }}>
-            Collected
-          </button>
+          <div style={{ marginTop: 8 }}>
+
+            {/* PAYMENT SELECT */}
+            <select
+              value={order.payment_method || ""}
+              onChange={(e) =>
+                updatePayment(order.id, e.target.value as PaymentMethod)
+              }
+              style={{ marginRight: 8 }}
+            >
+              <option value="" disabled>
+                Select Payment
+              </option>
+              <option value="CASH">Cash</option>
+              <option value="UPI">UPI</option>
+              <option value="CARD">Card</option>
+            </select>
+
+            {/* COLLECT BUTTON */}
+            <button
+              disabled={!order.payment_method}
+              onClick={() => collectOrder(order.id)}
+              style={{
+                background: order.payment_method ? "#22c55e" : "#ccc",
+                color: "white",
+                padding: "6px 10px",
+                borderRadius: 4,
+                border: "none",
+                cursor: order.payment_method ? "pointer" : "not-allowed",
+              }}
+            >
+              {order.payment_method ? "Collected" : "Select Payment First"}
+            </button>
+
+          </div>
         )}
       </div>
       )
     })
   }
   
-
   const orderPriority: Record<OrderStatus, number> = {
     [OrderStatus.PLACED]: 1,
     [OrderStatus.PREPARING]: 2,
@@ -383,6 +438,22 @@ export default function Index() {
   const gst = subtotal * 0.05; // 5% GST
   const grandTotal = subtotal + gst;
 
+  const splitItemsByStation = (items: OrderItem[]) => {
+    const map: Record<string, OrderItem[]> = {}
+
+    items.forEach(item => {
+      const station = item.station || "GENERAL"
+
+      if (!map[station]) {
+        map[station] = []
+      }
+
+      map[station].push(item)
+    })
+
+    return map
+  }
+
   const placeOrder = async () => {
     if (cart.length === 0) {
       alert("Cart empty");
@@ -391,7 +462,7 @@ export default function Index() {
 
     const payload = {
       outlet_id: OUTLET_ID,
-      order_no: orders.length + 1,
+      token_no: orders.length + 101,
       items: cart,
       subtotal,
       gst,
@@ -407,7 +478,7 @@ export default function Index() {
       .from("orders")
       .insert(payload)
       .select()
-      .single();
+      .single()
 
     if (error) {
       alert(error.message);
@@ -429,7 +500,20 @@ export default function Index() {
       console.error("Order items error:", itemError);
     }
 
-    printOrder(data, settings.printers)
+    const stationMap = splitItemsByStation(cart)
+
+    Object.entries(stationMap).forEach(([station, items]) => {
+      printKOT({
+        order: data,
+        items,
+        station
+      })
+    })
+
+    // optional: customer bill
+    printReceipt(data)
+
+    // printOrder(data, settings.printers)
     // DO NOT manually setOrders here
     // Realtime will handle insertion
 
@@ -438,6 +522,23 @@ export default function Index() {
     setCart([]);
     fetchMostOrdered();
   };
+
+  const handleItemClick = (item: MenuItem) => {
+
+    const hasSizes = item.sizes && item.sizes.length > 0
+    const hasAddons = item.addons && item.addons.length > 0
+
+    // If item has size OR addons → open modal
+    if (hasSizes || hasAddons) {
+      setSizeSelectorItem(item)
+      setSelectedSize(null)
+      setSelectedAddons([])
+      return
+    }
+
+    // Simple item → direct add
+    addToCart(item)
+  }
 
   const fetchMostOrdered = async () => {
     const { data, error } = await supabase
@@ -467,8 +568,11 @@ export default function Index() {
       .slice(0, 10);
 
     const finalItems = sorted
-      .map(([id]) => menuItems.find(m => m.id === id))
-      .filter(Boolean);
+      .map(([id]) => {
+        const baseId = id.split("-")[0]   // remove size/addon
+        return menuItems.find(m => m.id === baseId)
+      })
+      .filter(Boolean)
 
     setMostOrdered(finalItems.filter(Boolean) as MenuItem[]);
   };
@@ -535,6 +639,23 @@ export default function Index() {
     }
   };
 
+  const updatePayment = async (orderId: string, method: PaymentMethod) => {
+    const { error } = await supabase
+      .from("orders")
+      .update({ payment_method: method })
+      .eq("id", orderId)
+
+    if (!error) {
+      setOrders(prev =>
+        prev.map(o =>
+          o.id === orderId
+            ? { ...o, payment_method: method }
+            : o
+        )
+      )
+    }
+  }
+
   const updateMenuItem = async (
     id: string,
     updates: Partial<MenuItem>
@@ -587,7 +708,6 @@ export default function Index() {
         )
       )
     }
-
   }
 
   const playNotification = () => {
@@ -726,8 +846,14 @@ export default function Index() {
     return `${min}:${sec.toString().padStart(2,"0")}`
   }
 
+
+
+
+
   return (
-      <>
+    <>
+      <div className="flex h-screen">
+
         {/* MOBILE HEADER */}
         <div className="flex items-center p-4 border-b bg-white shadow-sm md:hidden">
           <button
@@ -1487,54 +1613,40 @@ export default function Index() {
           </div>
         )}
 
-        {/* REPORTS MODE */}
-        {view === "reports" && (
-          <div>
-            <h2 className="text-2xl font-bold mb-4">Reports</h2>
-            <p>Reports dashboard coming next...</p>
-          </div>
-        )}
-
-        {view === "history" && (
-          <div>
-            <h2 className="text-2xl font-bold mb-4">Order History</h2>
-            <p>Order history page coming next...</p>
-          </div>
-        )}
-
       </div>
-      
-      {/* ORDER HISTORY MODE */}
+
       {view === "history" && (
         <div>
+          <h2 className="text-2xl font-bold mb-4">Order History</h2>
 
-          <h2 style={{ fontSize: 22, marginBottom: 20 }}>
-            Order History
-          </h2>
+          {orders.length === 0 && (
+            <p className="text-gray-500">No past orders</p>
+          )}
 
           {orders.map(order => (
             <div
               key={order.id}
-              style={{
-                border: "1px solid #ddd",
-                padding: 12,
-                marginBottom: 10,
-                borderRadius: 6,
-              }}
+              className="border rounded-lg p-4 mb-3"
             >
-              <strong>#{order.order_no}</strong> — {order.status}
+              <div className="flex justify-between">
+                <p className="font-semibold">
+                  Token #{order.token_no}
+                </p>
 
-              <div style={{ fontSize: 14 }}>
+                <p className="text-sm">
+                  {order.status}
+                </p>
+              </div>
+
+              <p className="text-sm text-gray-600">
                 ₹{order.total}
-              </div>
+              </p>
 
-              <div style={{ fontSize: 12, color: "#666" }}>
+              <p className="text-xs text-gray-400">
                 ⏱ {getOrderTime(order.created_at)}
-              </div>
-
+              </p>
             </div>
           ))}
-
         </div>
       )}
 
@@ -1727,8 +1839,8 @@ export default function Index() {
             />
 
             <p style={{ marginTop: 10 }}>
-              Order ID: {qrOrderId.slice(0, 6)}
-            </p>
+            Token #{orders.find(o => o.id === qrOrderId)?.token_no || "-"}
+          </p>
 
             <button
               onClick={() => setQrOrderId(null)}
@@ -1739,11 +1851,12 @@ export default function Index() {
           </div>
         </div>
       )}
-      <audio
-        ref={audioRef}
-        src="/notification.mp3"
-        preload="auto"
-      />
+        <audio
+          ref={audioRef}
+          src="/notification.mp3"
+          preload="auto"
+        />
+      </div>
     </div>
     </>   
   );

@@ -109,10 +109,10 @@ export function usePOS() {
 
     const newOrder: Order = {
       id: crypto.randomUUID(),
-      order_no: orders.length + 1,
+      token_no: orders.length + 101,
       items: [...cart],
       total: cartTotal,
-      status: "PLACED",
+      status: OrderStatus.PLACED,
       created_at: new Date().toISOString(),
     };
     

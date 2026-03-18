@@ -118,10 +118,39 @@ export default function OrderTracking() {
 
       <div style={{ padding: 20, textAlign: "center" }}>
         <h2>PAHADI MOMOS 🥟</h2>
-        <h3>Token #{order.order_no}</h3>
+        <h3>Token #{(order as any).token_no || order.order_no}</h3>
         <p>
-          Status: <strong>{order.status}</strong>
+          Status:{" "}
+          <strong
+            style={{
+              color:
+                order.status === "READY"
+                  ? "green"
+                  : order.status === "PREPARING"
+                  ? "orange"
+                  : "gray",
+            }}
+          >
+            {order.status}
+          </strong>
         </p>
+
+        {order.status === "READY" && (
+          <p style={{ marginTop: 10, fontWeight: "bold", color: "green" }}>
+            🎉 Your order is ready for pickup!
+          </p>
+        )}
+
+        {/* ✅ ADD HERE */}
+        {(order as any).items && (
+          <div style={{ marginTop: 20 }}>
+            {(order as any).items.map((item: any, i: number) => (
+              <div key={i}>
+                {item.name} × {item.quantity}
+              </div>
+            ))}
+          </div>
+        )}
 
         {order.status === "PREPARING" && order.ready_at && (
           <p>
