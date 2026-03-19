@@ -42,6 +42,7 @@ type POSSettings = {
   delayAlertMinutes: number
   soundAlert: boolean
   autoSortOrders: boolean
+  customerDisplayEnabled: boolean
   printers: Printer[]
 }
 
@@ -92,6 +93,7 @@ export default function Index() {
     delayAlertMinutes: 10,
     soundAlert: true,
     autoSortOrders: true,
+    customerDisplayEnabled: false,
     printers: [
       {
         id: "main",
@@ -866,6 +868,15 @@ export default function Index() {
           <h1 className="ml-4 font-bold text-lg">
             PAHADI MOMOS
           </h1>
+
+          {settings.customerDisplayEnabled && (
+            <button
+              onClick={() => window.open("/display", "_blank")}
+              className="ml-auto bg-black text-white px-3 py-1 rounded"
+            >
+              Display
+            </button>
+          )}
         </div>
       <div
         className={`flex-1 p-6 overflow-y-auto transition-all duration-300 ${

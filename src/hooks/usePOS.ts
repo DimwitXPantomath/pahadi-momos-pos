@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { MenuItem, CartItem, Order, OutletInfo, OrderStatus, } from '@/types/pos';
+import { MenuItem, CartItem, Order, OutletInfo, OrderStatus, OrderItem, } from '@/types/pos';
 import { supabase } from "@/lib/supabase";
 import { outlet as DEFAULT_OUTLET } from "@/config/outlet";
 
@@ -102,36 +102,42 @@ export function usePOS() {
 
   // Order operations
   const createOrder = useCallback(
-  async (customerName?: string, tableNumber?: string): Promise<Order> => {
-    if (cart.length === 0) {
-      throw new Error("Cannot create order with empty cart");
-    }
+    async (customerName?: string, tableNumber?: string): Promise<Order> => {
+      if (cart.length === 0) {
+        throw new Error("Cannot create order with empty cart");
+      }
 
-    const newOrder: Order = {
-      id: crypto.randomUUID(),
-      token_no: orders.length + 101,
-      items: [...cart],
-      total: cartTotal,
-      status: OrderStatus.PLACED,
-      created_at: new Date().toISOString(),
-    };
-    
-    const { error } = await supabase
-      .from("orders")
-      .insert(newOrder);
+      // ✅ DEFINE newOrder HERE
+      const newOrder: Order = {
+        id: crypto.randomUUID(),
 
-    if (error) {
-      console.error("Failed to create order:", error);
-      throw error;
-    }
+        order_no: orders.length + 1,
+        token_no: orders.length + 101,
 
-    setOrders((prev) => [newOrder, ...prev]);
-    setCart([]);
+        items: cart as OrderItem[],
+        total: cartTotal,
 
-    return newOrder;
-  },
-  [cart, orders.length, cartTotal]
-);
+        status: OrderStatus.PLACED,
+
+        created_at: new Date().toISOString(),
+      };
+
+      const { error } = await supabase
+        .from("orders")
+        .insert(newOrder);
+
+      if (error) {
+        console.error("Failed to create order:", error);
+        throw error;
+      }
+
+      setOrders((prev) => [newOrder, ...prev]);
+      setCart([]);
+
+      return newOrder;
+    },
+    [cart, orders.length, cartTotal]
+  );
 
 
   const updateOrderStatus = useCallback((orderId: string, status: OrderStatus) => {

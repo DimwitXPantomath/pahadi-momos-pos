@@ -116,6 +116,25 @@ export default function Settings({ settings, setSettings }: Props) {
         </label>
       </div>
 
+      <h3>Display Settings</h3>
+
+      {/* Token Display */}
+      <div style={{ marginTop: 20 }}>
+        <label>
+          <input
+            type="checkbox"
+            checked={settings.customerDisplayEnabled}
+            onChange={(e) =>
+              setSettings(prev => ({
+                ...prev,
+                customerDisplayEnabled: e.target.checked
+              }))
+            }
+          />
+          Enable Customer Display Screen
+        </label>
+      </div>
+
       {/* Auto Sort */}
       <div>
         <label>
