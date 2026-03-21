@@ -8,6 +8,38 @@ export const categories = [
   "Beverages",
 ];
 
+export type Ingredient = {
+  id: string
+  name: string
+  unit: string
+  current_stock: number
+  min_stock: number
+}
+
+export type IngredientPrice = {
+  id: string
+  ingredient_id: string
+  vendor_name: string
+  price_per_unit: number
+}
+
+export type SubRecipe = {
+  id: string
+  name: string
+  yield_qty: number
+  unit: string
+}
+
+export type SubRecipeItem = {
+  id: string
+  sub_recipe_id: string
+  ingredient_id: string
+  quantity: number
+
+  yield_percent?: number
+  wastage?: number
+}
+
 export type OrderItem = {
   id: string
   name: string
@@ -39,6 +71,35 @@ export type OutletInfo = {
   phone?: string;
 };
 
+export type Ingredient = {
+  id: string
+  name: string
+  unit: string
+  current_stock: number
+  min_stock: number
+}
+
+export type IngredientPrice = {
+  id: string
+  ingredient_id: string
+  vendor_name: string
+  price_per_unit: number
+}
+
+export type SubRecipe = {
+  id: string
+  name: string
+  yield_qty: number
+  unit: string
+}
+
+export type SubRecipeItem = {
+  id: string
+  sub_recipe_id: string
+  ingredient_id: string
+  quantity: number
+}
+
 export enum OrderStatus {
   PLACED = "PLACED",
   PREPARING = "PREPARING",
@@ -46,18 +107,41 @@ export enum OrderStatus {
   COLLECTED = "COLLECTED",
 }
 
-export interface Order {
-  id: string;
+export type Order = {
+  id: string
+
+  // core identifiers
+  order_no: number
   token_no: number
-  outlet_id: string;
-  order_no: number; 
-  status: OrderStatus;
-  items: OrderItem[];
-  total: number;
-  created_at: string | number;
-  ready_at?: string | null;
-  tableNumber?: number | null;
-  rating?: number | null;
+  outlet_id?: string   // optional (safe for now)
+
+  // order data
+  items: OrderItem[]
+  total: number
+  status: OrderStatus
+
+  // timestamps
+  created_at: string
+  ready_at?: string | null
+
+  // optional business fields
+  payment_method?: "CASH" | "CARD" | "UPI"
+  tableNumber?: number | null
+  rating?: number | null
+}
+
+export type POSSettings = {
+  kdsEnabled: boolean
+  delayAlertMinutes: number
+  soundAlert: boolean
+  autoSortOrders: boolean
+  printers: {
+    id: string
+    name: string
+    role: "BILL" | "KOT" | "BOTH"
+  }[]
+
+  customerDisplayEnabled: boolean   // ✅ your new feature
 }
 
 export type MenuItem = {

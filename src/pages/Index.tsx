@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabase";
-import type { OrderItem } from "@/types/pos";
+import type { Ingredient, OrderItem, RecipeItem, SubRecipe } from "@/types/pos";
 import QRCode from "react-qr-code";
 import { OrderStatus } from "@/types/pos";
 import { useState, useEffect, useMemo, useRef } from "react";
@@ -9,41 +9,27 @@ import Settings from "@/components/Settings"
 import { printReceipt } from "@/utils/printReceipt"
 import { printKOT } from "@/utils/printKOT"
 import { printOrder } from "@/utils/printManager"
+import type { POSSettings } from "@/types/pos"
+import type { Order } from "@/types/pos"
 
 const OUTLET_ID = "demo-outlet";
 
 type View =
   | "menu"
   | "orders"
-  | "reports"
   | "history"
+  | "recipes"
+  | "procurement"
+  | "analytics"
   | "menu_manage"
-  | "settings";
-
-type Order = {
-  id: string
-  order_no: number
-  total: number
-  status: OrderStatus
-  created_at: string
-  items: OrderItem[]
-  token_no: number
-  payment_method?: "CASH" | "CARD" | "UPI"
-}
+  | "settings"
+  | "ingredients"
+  | "subrecipes"
 
 type Printer = {
   id: string
   name: string
   role: "BILL" | "KOT" | "BOTH"
-}
-
-type POSSettings = {
-  kdsEnabled: boolean
-  delayAlertMinutes: number
-  soundAlert: boolean
-  autoSortOrders: boolean
-  customerDisplayEnabled: boolean
-  printers: Printer[]
 }
 
 type PaymentMethod = "CASH" | "CARD" | "UPI";
@@ -76,15 +62,26 @@ export default function Index() {
   const [selectedSize, setSelectedSize] = useState<{ label: string; price: number } | null>(null)
   const addons = sizeSelectorItem?.addons ?? []
   const [manageCategory, setManageCategory] = useState<string | null>(null)
-  
+  const [ingredients, setIngredients] = useState<Ingredient[]>([])
+  const [newIngredientName, setNewIngredientName] = useState("")
+  const [newIngredientUnit, setNewIngredientUnit] = useState("")
+  const [subRecipes, setSubRecipes] = useState<SubRecipe[]>([])
+  const [newSubRecipe, setNewSubRecipe] = useState("")
   const alertedOrdersRef = useRef<Set<string>>(new Set())
+  const [yieldPercent, setYieldPercent] = useState("100")
+  const [recipes, setRecipes] = useState<Recipe[]>([])
+  const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null)
+  const [recipeItems, setRecipeItems] = useState<RecipeItem[]>([])
+  const [selectedMenuItem, setSelectedMenuItem] = useState("")
+  const [selectedSubRecipeForRecipe, setSelectedSubRecipeForRecipe] = useState("")
+  const [selectedIngredientForRecipe, setSelectedIngredientForRecipe] = useState("")
+  const [recipeQty, setRecipeQty] = useState("")
 
   const [mostOrdered, setMostOrdered] = useState<MenuItem[]>([]);
 
   const sidebarItems: { label: string; value: View }[] = [
     { label: "Menu", value: "menu" },
     { label: "Orders", value: "orders" },
-    { label: "Reports", value: "reports" },
     { label: "Order History", value: "history" },
   ];
 
@@ -307,6 +304,72 @@ export default function Index() {
     })
   }
 
+  const addSubRecipeItem = async () => {
+    if (!selectedSubRecipe || !selectedIngredient || !quantity) return
+
+    const qty = Number(quantity)
+    const yieldVal = Number(yieldPercent || 100)
+
+    const usableQty = qty * (yieldVal / 100)
+    const wastage = qty - usableQty
+
+    const { data } = await supabase
+      .from("sub_recipe_items")
+      .insert({
+        sub_recipe_id: selectedSubRecipe.id,
+        ingredient_id: selectedIngredient,
+        quantity: qty,
+        yield_percent: yieldVal,
+        wastage: wastage
+      })
+      .select()
+      .single()
+
+    if (data) {
+      setSubRecipeItems(prev => [...prev, data])
+      setQuantity("")
+      setYieldPercent("100")
+    }
+  }
+
+  const addRecipe = async () => {
+    if (!selectedMenuItem) return
+
+    const { data } = await supabase
+      .from("recipes")
+      .insert({
+        menu_item_id: selectedMenuItem,
+        name: "Recipe"
+      })
+      .select()
+      .single()
+
+    if (data) {
+      setRecipes(prev => [...prev, data])
+    }
+  }
+
+  const addRecipeItem = async () => {
+    if (!selectedRecipe || !recipeQty) return
+
+    const { data } = await supabase
+      .from("recipe_items")
+      .insert({
+        recipe_id: selectedRecipe.id,
+        ingredient_id: selectedIngredientForRecipe || null,
+        sub_recipe_id: selectedSubRecipeForRecipe || null,
+        quantity: Number(recipeQty),
+        yield_percent: 100
+      })
+      .select()
+      .single()
+
+    if (data) {
+      setRecipeItems(prev => [...prev, data])
+      setRecipeQty("")
+    }
+  }
+
   const renderOrders = (list: Order[], settings: POSSettings) => {
     const sorted = settings.autoSortOrders
       ? [...list].sort((a, b) => {
@@ -456,6 +519,254 @@ export default function Index() {
     return map
   }
 
+  const addIngredient = async () => {
+    if (!newIngredientName || !newIngredientUnit) return
+
+    const { data } = await supabase
+      .from("ingredients")
+      .insert({
+        name: newIngredientName,
+        unit: newIngredientUnit
+      })
+      .select()
+      .single()
+
+    if (data) {
+      setIngredients(prev => [...prev, data])
+      setNewIngredientName("")
+      setNewIngredientUnit("")
+    }
+  }
+
+  const expandSubRecipe = async (subRecipeId: string, multiplier: number) => {
+    const { data } = await supabase
+      .from("sub_recipe_items")
+      .select("*")
+      .eq("sub_recipe_id", subRecipeId)
+
+    if (!data) return []
+
+    return data.map(item => ({
+      ingredient_id: item.ingredient_id,
+      quantity:
+        item.quantity *
+        (item.yield_percent ? item.yield_percent / 100 : 1) *
+        multiplier
+    }))
+  }
+
+  const expandRecipe = async (recipeId: string) => {
+    const { data } = await supabase
+      .from("recipe_items")
+      .select("*")
+      .eq("recipe_id", recipeId)
+
+    if (!data) return []
+
+    let finalIngredients: any[] = []
+
+    for (const item of data) {
+
+      // 🔹 If direct ingredient
+      if (item.ingredient_id) {
+        finalIngredients.push({
+          ingredient_id: item.ingredient_id,
+          quantity:
+            item.quantity *
+            (item.yield_percent ? item.yield_percent / 100 : 1)
+        })
+      }
+
+      // 🔹 If sub recipe
+      if (item.sub_recipe_id) {
+        const subItems = await expandSubRecipe(
+          item.sub_recipe_id,
+          item.quantity
+        )
+
+        finalIngredients.push(...subItems)
+      }
+    }
+
+    return finalIngredients
+  }
+
+  const updateStock = async (ingredient_id: string, qty: number) => {
+    const { data } = await supabase
+      .from("ingredients")
+      .select("current_stock")
+      .eq("id", ingredient_id)
+      .single()
+
+    if (!data) return
+
+    await supabase
+      .from("ingredients")
+      .update({
+        current_stock: data.current_stock - qty
+      })
+      .eq("id", ingredient_id)
+  }
+
+  const calculateCost = async (ingredientsList: any[]) => {
+    let total = 0
+
+    for (const item of ingredientsList) {
+
+      const { data } = await supabase
+        .from("ingredient_prices")
+        .select("price_per_unit")
+        .eq("ingredient_id", item.ingredient_id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .single()
+
+      if (data) {
+        total += data.price_per_unit * item.quantity
+      }
+    }
+
+    return total
+  }
+
+  const getLowStockIngredients = async () => {
+    const { data } = await supabase
+      .from("ingredients")
+      .select("*")
+
+    if (!data) return []
+
+    return data.filter(i => i.current_stock < i.min_stock)
+  }
+
+  const suggestPurchaseQty = (ingredient: any) => {
+    const deficit = ingredient.min_stock - ingredient.current_stock
+
+    return deficit > 0 ? deficit * 2 : 0   // buffer stock
+  }
+
+  const getBestVendorPrice = async (ingredient_id: string) => {
+    const { data } = await supabase
+      .from("ingredient_prices")
+      .select("*")
+      .eq("ingredient_id", ingredient_id)
+      .order("price_per_unit", { ascending: true })
+      .limit(1)
+      .single()
+
+    return data
+  }
+
+  const generatePurchaseOrder = async () => {
+
+    const lowStockItems = await getLowStockIngredients()
+
+    if (!lowStockItems.length) {
+      alert("No items needed")
+      return
+    }
+
+    let poItems = []
+
+    for (const ing of lowStockItems) {
+
+      const qty = suggestPurchaseQty(ing)
+
+      const vendor = await getBestVendorPrice(ing.id)
+
+      if (!vendor) continue
+
+      poItems.push({
+        ingredient_id: ing.id,
+        quantity: qty,
+        price: vendor.price_per_unit,
+        vendor_name: vendor.vendor_name
+      })
+    }
+
+    // group by vendor (IMPORTANT)
+    const grouped: Record<string, any[]> = {}
+
+    poItems.forEach(item => {
+      if (!grouped[item.vendor_name]) {
+        grouped[item.vendor_name] = []
+      }
+      grouped[item.vendor_name].push(item)
+    })
+
+    // create PO per vendor
+    for (const vendor in grouped) {
+
+      const items = grouped[vendor]
+
+      const { data: po } = await supabase
+        .from("purchase_orders")
+        .insert({
+          vendor_name: vendor,
+          status: "PENDING"
+        })
+        .select()
+        .single()
+
+      if (!po) continue
+
+      await supabase
+        .from("purchase_order_items")
+        .insert(
+          items.map(i => ({
+            purchase_order_id: po.id,
+            ingredient_id: i.ingredient_id,
+            quantity: i.quantity,
+            price: i.price
+          }))
+        )
+    }
+
+    alert("Purchase Orders Generated")
+  }
+
+  const calculateItemProfit = async (menuItemId: string, sellingPrice: number) => {
+
+    const { data: recipe } = await supabase
+      .from("recipes")
+      .select("*")
+      .eq("menu_item_id", menuItemId)
+      .single()
+
+    if (!recipe) return 0
+
+    const ingredients = await expandRecipe(recipe.id)
+    const cost = await calculateCost(ingredients)
+
+    return sellingPrice - cost
+  }
+
+  const getTotalWastage = async () => {
+    const { data } = await supabase
+      .from("sub_recipe_items")
+      .select("wastage")
+
+    return data?.reduce((sum, i) => sum + (i.wastage || 0), 0)
+  }
+
+  const getTopSelling = () => {
+
+    const map: Record<string, number> = {}
+
+    orders.forEach(order => {
+      order.items.forEach(item => {
+        map[item.name] = (map[item.name] || 0) + item.quantity
+      })
+    })
+
+    return Object.entries(map)
+      .sort((a, b) => b[1] - a[1])
+  }
+
+  const suggestPrice = (cost: number, marginPercent: number) => {
+    return cost / (1 - marginPercent / 100)
+  }
+
   const placeOrder = async () => {
     if (cart.length === 0) {
       alert("Cart empty");
@@ -511,6 +822,31 @@ export default function Index() {
         station
       })
     })
+
+    for (const item of cart) {
+
+      // find recipe
+      const { data: recipe } = await supabase
+        .from("recipes")
+        .select("*")
+        .eq("menu_item_id", item.baseId || item.id)
+        .single()
+
+      if (!recipe) continue
+
+      const ingredientsList = await expandRecipe(recipe.id)
+
+      // multiply by quantity ordered
+      const finalList = ingredientsList.map(i => ({
+        ...i,
+        quantity: i.quantity * item.quantity
+      }))
+
+      // deduct
+      for (const ing of finalList) {
+        await updateStock(ing.ingredient_id, ing.quantity)
+      }
+    }
 
     // optional: customer bill
     printReceipt(data)
@@ -963,25 +1299,6 @@ export default function Index() {
             Orders
           </div>
 
-          {/* REPORTS */}
-          <div
-            onClick={() => {
-              setView("reports")
-              setSidebarOpen(false)
-            }}
-            style={{
-              marginBottom: 12,
-              cursor: "pointer",
-              padding: "10px 12px",
-              borderRadius: 6,
-              fontWeight: view === "reports" ? "bold" : "normal",
-              background: view === "reports" ? "#f97316" : "transparent",
-              color: "white",
-            }}
-          >
-            Reports
-          </div>
-
           {/* ORDER HISTORY */}
           <div
             onClick={() => {
@@ -1039,6 +1356,51 @@ export default function Index() {
         >
           Menu Management
         </div>
+        
+        {/* INGREDIENTS */}
+        <div
+          onClick={() => {
+          setView("ingredients")
+          setSidebarOpen(false)
+          }}
+          style={{
+            marginBottom: 12,
+            cursor: "pointer",
+            padding: "10px 12px",
+            borderRadius: 6,
+            fontWeight: view === "ingredients" ? "bold" : "normal",
+            background: view === "ingredients" ? "#f97316" : "transparent",
+            color: "white",
+          }}
+        >
+          Ingredients
+        </div>
+
+        <div onClick={() => setView("procurement")}>
+          Procurement
+        </div>
+
+        <div onClick={() => setView("analytics")}>
+          Analytics
+        </div>
+        
+        {/* SUB RECIPES */}
+        <div onClick={() => {
+          setView("subrecipes")
+          setSidebarOpen(false)
+          }}
+          style={{
+            marginBottom: 12,
+            cursor: "pointer",
+            padding: "10px 12px",
+            borderRadius: 6,
+            fontWeight: view === "subrecipes" ? "bold" : "normal",
+            background: view === "subrecipes" ? "#f97316" : "transparent",
+            color: "white",
+          }}
+          >
+            Sub Recipes
+          </div>
 
         {/* BOTTOM SECTION */}
         <div style={{
@@ -1661,46 +2023,6 @@ export default function Index() {
         </div>
       )}
 
-      {/* REPORTS MODE */}
-      {view === "reports" && (
-
-        <div>
-
-          <h2 style={{ fontSize: 22, marginBottom: 20 }}>
-            Sales Reports
-          </h2>
-
-          {/* ITEM SALES CHART */}
-          <div style={{ height: 300 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={salesData}>
-                <XAxis dataKey="name" />
-                <YAxis />
-                <Tooltip />
-                <Bar dataKey="sales" fill="#f97316" />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-
-          {/* PAYMENT METHOD CHART */}
-          <h3 style={{ marginTop: 40, marginBottom: 10 }}>
-            Payment Methods
-          </h3>
-
-          <div style={{ height: 300 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={paymentData}>
-                <XAxis dataKey="name" />
-                <YAxis />
-                <Tooltip />
-                <Bar dataKey="value" fill="#22c55e" />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-
-        </div>
-      )}
-
       {view === "settings" && (
         <Settings
           settings={settings}
@@ -1817,6 +2139,296 @@ export default function Index() {
 
         </div>
 
+      )}
+
+      {view === "ingredients" && (
+        <div>
+          <h2>Ingredients</h2>
+
+          <input
+            placeholder="Ingredient name"
+            value={newIngredientName}
+            onChange={(e) => setNewIngredientName(e.target.value)}
+          />
+
+          <input
+            placeholder="Unit (g/ml/pcs)"
+            value={newIngredientUnit}
+            onChange={(e) => setNewIngredientUnit(e.target.value)}
+          />
+
+          <button onClick={addIngredient}>Add</button>
+
+          {ingredients.map(i => (
+            <div key={i.id}>
+              {i.name} ({i.unit}) — Stock: {i.current_stock}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {view === "procurement" && (
+        <div>
+          <h2>Procurement</h2>
+
+          <button onClick={generatePurchaseOrder}>
+            Generate Purchase Orders
+          </button>
+        </div>
+      )}
+
+      {view === "analytics" && (
+        <div>
+
+          <h2>Analytics Dashboard</h2>
+
+          <div className="grid grid-cols-3 gap-6">
+
+            {/* PROFIT */}
+            <div className="border p-4">
+              <h3>Profit Insights</h3>
+              <p>Coming from recipes</p>
+            </div>
+
+            {/* WASTAGE */}
+            <div className="border p-4">
+              <h3>Wastage</h3>
+              <p>Track ingredient loss</p>
+            </div>
+
+            {/* SALES */}
+            <div className="border p-4">
+              <h3>Top Selling</h3>
+              <p>Based on orders</p>
+            </div>
+
+          </div>
+
+        </div>
+      )}
+
+      {view === "subrecipes" && (
+        <div>
+
+          {/* CREATE SUB RECIPE */}
+          <h2>Sub Recipes</h2>
+
+          <div className="flex gap-2 mb-4">
+            <input
+              placeholder="Sub recipe name"
+              value={newSubRecipe}
+              onChange={(e) => setNewSubRecipe(e.target.value)}
+            />
+
+            <button onClick={addSubRecipe}>Add</button>
+          </div>
+
+          <div className="grid grid-cols-2 gap-6">
+
+            {/* LEFT: SUB RECIPE LIST */}
+            <div>
+              {subRecipes.map(sr => (
+                <div
+                  key={sr.id}
+                  onClick={() => setSelectedSubRecipe(sr)}
+                  className={`p-2 cursor-pointer border mb-2 ${
+                    selectedSubRecipe?.id === sr.id
+                      ? "bg-black text-white"
+                      : ""
+                  }`}
+                >
+                  {sr.name}
+                </div>
+              ))}
+            </div>
+
+            {/* RIGHT: BUILDER */}
+            <div>
+
+              <h3>
+                {selectedSubRecipe
+                  ? selectedSubRecipe.name
+                  : "Select Sub Recipe"}
+              </h3>
+
+              {selectedSubRecipe && (
+                <>
+                  {/* ADD INGREDIENT */}
+                  <div className="flex gap-2 mb-4">
+
+                    <select
+                      value={selectedIngredient}
+                      onChange={(e) => setSelectedIngredient(e.target.value)}
+                    >
+                      <option value="">Ingredient</option>
+                      {ingredients.map(i => (
+                        <option key={i.id} value={i.id}>
+                          {i.name}
+                        </option>
+                      ))}
+                    </select>
+
+                    <input
+                      placeholder="Qty"
+                      value={quantity}
+                      onChange={(e) => setQuantity(e.target.value)}
+                    />
+
+                    <input
+                      placeholder="Yield %"
+                      value={yieldPercent}
+                      onChange={(e) => setYieldPercent(e.target.value)}
+                    />
+
+                    <button onClick={addSubRecipeItem}>
+                      Add
+                    </button>
+
+                  </div>
+
+                  {/* LIST */}
+                  {subRecipeItems.map(item => {
+                    const ing = ingredients.find(i => i.id === item.ingredient_id)
+
+                    const usableQty =
+                      item.quantity * ((item.yield_percent || 100) / 100)
+
+                    return (
+                      <div key={item.id} className="border p-2 mb-2 rounded">
+
+                        <div className="font-semibold">{ing?.name}</div>
+
+                        <div className="text-sm">
+                          Input: {item.quantity}
+                        </div>
+
+                        <div className="text-sm">
+                          Yield: {item.yield_percent || 100}%
+                        </div>
+
+                        <div className="text-sm text-green-600">
+                          Usable: {usableQty.toFixed(2)}
+                        </div>
+
+                        <div className="text-sm text-red-500">
+                          Wastage: {item.wastage?.toFixed(2)}
+                        </div>
+
+                      </div>
+                    )
+                  })}
+
+                </>
+              )}
+
+            </div>
+          </div>
+        </div>
+      )}
+
+      {view === "recipes" && (
+        <div className="grid grid-cols-2 gap-6">
+
+          {/* LEFT: MENU ITEMS */}
+          <div>
+            <h3>Select Menu Item</h3>
+
+            {menuItems.map(item => (
+              <div
+                key={item.id}
+                onClick={() => setSelectedMenuItem(item.id)}
+                className="p-2 border mb-2 cursor-pointer"
+              >
+                {item.name}
+              </div>
+            ))}
+
+            <button onClick={addRecipe}>Create Recipe</button>
+
+            <h3 className="mt-4">Recipes</h3>
+
+            {recipes.map(r => (
+              <div
+                key={r.id}
+                onClick={() => setSelectedRecipe(r)}
+                className="p-2 border mb-2 cursor-pointer"
+              >
+                {r.name}
+              </div>
+            ))}
+          </div>
+
+          {/* RIGHT: BUILDER */}
+          <div>
+
+            <h3>
+              {selectedRecipe ? "Build Recipe" : "Select Recipe"}
+            </h3>
+
+            {selectedRecipe && (
+              <>
+                <div className="flex gap-2 mb-4">
+
+                  {/* INGREDIENT */}
+                  <select
+                    value={selectedIngredientForRecipe}
+                    onChange={(e) => {
+                      setSelectedIngredientForRecipe(e.target.value)
+                      setSelectedSubRecipeForRecipe("")
+                    }}
+                  >
+                    <option value="">Ingredient</option>
+                    {ingredients.map(i => (
+                      <option key={i.id} value={i.id}>
+                        {i.name}
+                      </option>
+                    ))}
+                  </select>
+
+                  {/* SUB RECIPE */}
+                  <select
+                    value={selectedSubRecipeForRecipe}
+                    onChange={(e) => {
+                      setSelectedSubRecipeForRecipe(e.target.value)
+                      setSelectedIngredientForRecipe("")
+                    }}
+                  >
+                    <option value="">Sub Recipe</option>
+                    {subRecipes.map(sr => (
+                      <option key={sr.id} value={sr.id}>
+                        {sr.name}
+                      </option>
+                    ))}
+                  </select>
+
+                  <input
+                    placeholder="Qty"
+                    value={recipeQty}
+                    onChange={(e) => setRecipeQty(e.target.value)}
+                  />
+
+                  <button onClick={addRecipeItem}>
+                    Add
+                  </button>
+
+                </div>
+
+                {/* LIST */}
+                {recipeItems.map(item => {
+                  const ing = ingredients.find(i => i.id === item.ingredient_id)
+                  const sr = subRecipes.find(s => s.id === item.sub_recipe_id)
+
+                  return (
+                    <div key={item.id} className="border p-2 mb-2">
+                      {ing?.name || sr?.name} — {item.quantity}
+                    </div>
+                  )
+                })}
+
+              </>
+            )}
+          </div>
+        </div>
       )}
 
       {/* QR MODAL */}
