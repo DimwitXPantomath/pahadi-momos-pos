@@ -53,6 +53,7 @@ export default function Index() {
   const [newItemIsVeg, setNewItemIsVeg] = useState(true);
   const [vegFilter, setVegFilter] = useState<"all" | "veg" | "nonveg">("all");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [, setTick] = useState(0)
   const placedOrders = orders.filter(o => o.status === OrderStatus.PLACED);
   const preparingOrders = orders.filter(o => o.status === OrderStatus.PREPARING);
@@ -76,7 +77,7 @@ export default function Index() {
   const [selectedSubRecipeForRecipe, setSelectedSubRecipeForRecipe] = useState("")
   const [selectedIngredientForRecipe, setSelectedIngredientForRecipe] = useState("")
   const [recipeQty, setRecipeQty] = useState("")
-
+  const [suggestions, setSuggestions] = useState<string[]>([])
   const [mostOrdered, setMostOrdered] = useState<MenuItem[]>([]);
 
   const sidebarItems: { label: string; value: View }[] = [
@@ -168,6 +169,15 @@ export default function Index() {
       setActiveCategory(categories[0].id);
     }
   }, [categories]);
+
+  useEffect(() => {
+    const load = async () => {
+      const data = await getSmartSuggestions()
+      setSuggestions(data.filter(Boolean))
+    }
+
+    load()
+  }, [orders])
 
   const addMenuItem = async () => {
     if (!newItemName || !newItemPrice || !newItemCategory) {
@@ -772,6 +782,8 @@ export default function Index() {
       alert("Cart empty");
       return;
     }
+    if (isPlacingOrder) return;
+    setIsPlacingOrder(true);
 
     const payload = {
       outlet_id: OUTLET_ID,
@@ -795,6 +807,7 @@ export default function Index() {
 
     if (error) {
       alert(error.message);
+      setIsPlacingOrder(false);
       return;
     }
 
@@ -858,6 +871,7 @@ export default function Index() {
     setQrOrderId(data.id);
     setView("orders");
     setCart([]);
+    setIsPlacingOrder(false);
     fetchMostOrdered();
   };
 
@@ -1182,6 +1196,86 @@ export default function Index() {
     const sec = Math.floor((diff % 60000) / 1000)
 
     return `${min}:${sec.toString().padStart(2,"0")}`
+  }
+
+  const getItemDemand = (days = 7) => {
+
+    const map: Record<string, number> = {}
+
+    const cutoff = Date.now() - days * 24 * 60 * 60 * 1000
+
+    orders.forEach(order => {
+      if (new Date(order.created_at).getTime() < cutoff) return
+
+      order.items.forEach(item => {
+        map[item.name] = (map[item.name] || 0) + item.quantity
+      })
+    })
+
+    return map
+  }
+
+  const getDailyPrepSuggestion = () => {
+    const demand = getItemDemand(7)
+
+    const daily: Record<string, number> = {}
+
+    Object.entries(demand).forEach(([item, qty]) => {
+      daily[item] = Math.ceil(qty / 7)
+    })
+
+    return daily
+  }
+
+  const classifyMenuItems = async () => {
+
+    const result: any[] = []
+
+    for (const item of menuItems) {
+
+      const sales = orders.reduce((sum, o) => {
+        return sum + o.items
+          .filter(i => i.name === item.name)
+          .reduce((s, i) => s + i.quantity, 0)
+      }, 0)
+
+      const profit = await calculateItemProfit(item.id, item.price)
+
+      let type = ""
+
+      if (sales > 50 && profit > 50) type = "STAR"
+      else if (sales > 50) type = "CASH COW"
+      else if (profit > 50) type = "PUZZLE"
+      else type = "DOG"
+
+      result.push({ name: item.name, sales, profit, type })
+    }
+
+    return result
+  }
+
+  const getSmartSuggestions = async () => {
+    const classified = await classifyMenuItems()
+
+    return classified.map(item => {
+
+      if (item.type === "DOG") {
+        return `❌ Remove ${item.name}`
+      }
+
+      if (item.type === "PUZZLE") {
+        return `📢 Promote ${item.name}`
+      }
+
+      if (item.type === "CASH COW") {
+        return `💰 Increase price slightly for ${item.name}`
+      }
+
+      if (item.type === "STAR") {
+        return `🔥 Highlight ${item.name}`
+      }
+
+    })
   }
 
 
@@ -1762,9 +1856,10 @@ export default function Index() {
 
               <button
                 onClick={() => placeOrder()}
-                className="w-full mt-4 bg-black text-white py-3 rounded-lg font-semibold"
+                disabled={isPlacingOrder || cart.length === 0}
+                className="w-full mt-4 bg-black text-white py-3 rounded-lg font-semibold disabled:bg-gray-400"
               >
-                Place Order
+                {isPlacingOrder ? "Placing Order..." : "Place Order"}
               </button>
             </div>
           </div>
@@ -2187,20 +2282,28 @@ export default function Index() {
             {/* PROFIT */}
             <div className="border p-4">
               <h3>Profit Insights</h3>
-              <p>Coming from recipes</p>
             </div>
 
             {/* WASTAGE */}
             <div className="border p-4">
               <h3>Wastage</h3>
-              <p>Track ingredient loss</p>
             </div>
 
             {/* SALES */}
             <div className="border p-4">
               <h3>Top Selling</h3>
-              <p>Based on orders</p>
             </div>
+
+          </div>
+
+          {/* ✅ ADD HERE (IMPORTANT) */}
+          <div className="mt-6">
+
+            <h3>Smart Suggestions</h3>
+
+            {suggestions.map((s, i) => (
+              <div key={i}>{s}</div>
+            ))}
 
           </div>
 

@@ -1,4 +1,3 @@
-import { number } from "framer-motion";
 export const categories = [
   "All",
   "Coffee",
@@ -71,34 +70,7 @@ export type OutletInfo = {
   phone?: string;
 };
 
-export type Ingredient = {
-  id: string
-  name: string
-  unit: string
-  current_stock: number
-  min_stock: number
-}
 
-export type IngredientPrice = {
-  id: string
-  ingredient_id: string
-  vendor_name: string
-  price_per_unit: number
-}
-
-export type SubRecipe = {
-  id: string
-  name: string
-  yield_qty: number
-  unit: string
-}
-
-export type SubRecipeItem = {
-  id: string
-  sub_recipe_id: string
-  ingredient_id: string
-  quantity: number
-}
 
 export enum OrderStatus {
   PLACED = "PLACED",
