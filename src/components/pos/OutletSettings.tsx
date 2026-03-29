@@ -3,7 +3,6 @@ import { OutletInfo } from "@/types/pos";
 import { Store, Phone, MapPin, Percent, Save, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import type { Outlet } from "@/types/outlet";
 
 
 interface OutletSettingsProps {
@@ -25,8 +24,8 @@ export function OutletSettings({ outlet, onUpdate }: OutletSettingsProps) {
 
     onUpdate({
       name: formData.name.trim() || outlet.name,
-      address: formData.address.trim() || outlet.address,
-      phone: formData.phone.trim() || outlet.phone,
+      address: (formData.address ?? "").trim() || outlet.address,
+      phone: (formData.phone ?? "").trim() || outlet.phone,
       taxRate: Number.isNaN(parsedTax) ? outlet.taxRate : parsedTax,
     });
 
@@ -66,7 +65,7 @@ export function OutletSettings({ outlet, onUpdate }: OutletSettingsProps) {
           </label>
           <Input
             value={formData.name}
-            onChange={e => updateField("name", e.target.value)}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateField("name", e.target.value)}
             className="h-12 text-lg"
           />
         </div>
@@ -79,7 +78,7 @@ export function OutletSettings({ outlet, onUpdate }: OutletSettingsProps) {
           </label>
           <Input
             value={formData.address}
-            onChange={e => updateField("address", e.target.value)}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateField("address", e.target.value)}
             className="h-12"
           />
         </div>
@@ -93,7 +92,7 @@ export function OutletSettings({ outlet, onUpdate }: OutletSettingsProps) {
           <Input
             type="tel"
             value={formData.phone}
-            onChange={e => updateField("phone", e.target.value)}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateField("phone", e.target.value)}
             className="h-12"
           />
         </div>

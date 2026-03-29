@@ -21,13 +21,13 @@ const MenuGrid = ({ menu, onAddToCart }: MenuGridProps) => {
 
   const categories = [
     "All",
-    ...Array.from(new Set(menu.map(item => item.category))),
+    ...Array.from(new Set(menu.map(item => item.category_id))),
   ];
 
   const filteredMenu =
     activeCategory === "All"
       ? menu
-      : menu.filter(item => item.category === activeCategory);
+      : menu.filter(item => item.category_id === activeCategory);
 
   return (
     <div className="flex flex-col h-full">
@@ -62,7 +62,7 @@ const MenuGrid = ({ menu, onAddToCart }: MenuGridProps) => {
               {item.name}
             </div>
             <div className="text-sm text-gray-500 flex justify-between mt-1">
-              <span>{item.category}</span>
+              <span>{item.category_id}</span>
               <span>₹{item.price}</span>
             </div>
           </button>

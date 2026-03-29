@@ -12,17 +12,17 @@ interface MenuManagerProps {
 interface ItemFormData {
   name: string;
   price: string;
-  category: string;
-  description: string;
+  category_id: string;
   available: boolean;
+  is_veg: boolean;
 }
 
 const initialFormData: ItemFormData = {
   name: "",
   price: "",
-  category: "Coffee",
-  description: "",
+  category_id: "",
   available: true,
+  is_veg: true,
 };
 
 export function MenuManager({
@@ -36,7 +36,7 @@ export function MenuManager({
   const [formData, setFormData] = useState<ItemFormData>(initialFormData);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
-  const categories = [...new Set(menu.map(i => i.category))];
+  const categories = [...new Set(menu.map(i => i.category_id))];
 
   const openAdd = () => {
     setEditingItem(null);
@@ -49,9 +49,9 @@ export function MenuManager({
     setFormData({
       name: item.name,
       price: item.price.toString(),
-      category: item.category,
-      description: item.description || "",
+      category_id: item.category_id,
       available: item.available,
+      is_veg: item.is_veg,
     });
     setIsOpen(true);
   };
@@ -63,9 +63,9 @@ export function MenuManager({
     const data = {
       name: formData.name.trim(),
       price: parsedPrice,
-      category: formData.category,
-      description: formData.description.trim(),
+      category_id: formData.category_id,
       available: formData.available,
+      is_veg: formData.is_veg,
     };
 
     if (editingItem) {

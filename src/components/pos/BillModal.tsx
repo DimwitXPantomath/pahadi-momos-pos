@@ -3,8 +3,7 @@ import { motion } from 'framer-motion';
 import { Order, OutletInfo } from '@/types/pos';
 import { X, Printer, Share2, CheckCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, } from '@/components/ui/dialog';
-import type { Outlet } from "@/types/outlet";
+import { Dialog, DialogContent } from '@/components/ui/dialog';
 
 
 interface BillModalProps {
@@ -86,11 +85,11 @@ export function BillModal({ order, outlet, isOpen, onClose, orderUrl }: BillModa
           <div className="border-t border-dashed border-border pt-3 space-y-1 mb-4">
             <div className="flex justify-between text-sm text-muted-foreground">
               <span>Subtotal</span>
-              <span>${order.subtotal.toFixed(2)}</span>
+              <span>₹{(order.total / 1.05).toFixed(2)}</span>
             </div>
             <div className="flex justify-between text-sm text-muted-foreground">
               <span>Tax ({outlet.taxRate}%)</span>
-              <span>${order.tax.toFixed(2)}</span>
+              <span>₹{(order.total - order.total / 1.05).toFixed(2)}</span>
             </div>
             <div className="flex justify-between text-lg font-bold text-foreground pt-2">
               <span>Total</span>

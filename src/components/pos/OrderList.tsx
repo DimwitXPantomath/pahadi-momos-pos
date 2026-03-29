@@ -4,58 +4,44 @@ import { Order, OrderStatus } from '@/types/pos';
 import { Clock, ChefHat, CheckCircle2, Package, Timer } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import type { Outlet } from "@/types/outlet";
 
-
-
-interface OrderListProps {
-  orders: Order[];
-  onUpdateStatus: (orderId: string, status: OrderStatus) => void;
-}
-
-const statusStyle: Record<string, string> = {
-  PLACED: "bg-amber-100 text-amber-800",
-  PREPARING: "bg-blue-100 text-blue-800",
-  READY: "bg-green-100 text-green-800",
-};
-
-const statusConfig: Record<OrderStatus, { 
-  label: string; 
-  icon: React.ReactNode; 
+const statusConfig: Record<OrderStatus, {
+  label: string;
+  icon: React.ReactNode;
   bgClass: string;
   textClass: string;
   next?: OrderStatus;
   nextLabel?: string;
 }> = {
-  PLACED: {
+  [OrderStatus.PLACED]: {
     label: 'Placed',
     icon: <Clock className="w-4 h-4" />,
-    bgClass: 'bg-status-placed/15',
-    textClass: 'text-status-placed',
-    next: 'PREPARING',
+    bgClass: 'bg-amber-100',
+    textClass: 'text-amber-800',
+    next: OrderStatus.PREPARING,
     nextLabel: 'Start Preparing',
   },
-  PREPARING: {
+  [OrderStatus.PREPARING]: {
     label: 'Preparing',
     icon: <ChefHat className="w-4 h-4" />,
-    bgClass: 'bg-status-preparing/15',
-    textClass: 'text-status-preparing',
-    next: 'READY',
+    bgClass: 'bg-blue-100',
+    textClass: 'text-blue-800',
+    next: OrderStatus.READY,
     nextLabel: 'Mark Ready',
   },
-  READY: {
+  [OrderStatus.READY]: {
     label: 'Ready',
     icon: <CheckCircle2 className="w-4 h-4" />,
-    bgClass: 'bg-status-ready/15',
-    textClass: 'text-status-ready',
-    next: 'COLLECTED',
+    bgClass: 'bg-green-100',
+    textClass: 'text-green-800',
+    next: OrderStatus.COLLECTED,
     nextLabel: 'Collected',
   },
-  COLLECTED: {
+  [OrderStatus.COLLECTED]: {
     label: 'Collected',
     icon: <Package className="w-4 h-4" />,
-    bgClass: 'bg-status-collected/15',
-    textClass: 'text-status-collected',
+    bgClass: 'bg-gray-100',
+    textClass: 'text-gray-600',
   },
 };
 
@@ -107,7 +93,7 @@ export function OrderList({ orders, onUpdateStatus }: OrderListProps) {
     <div className="flex flex-col h-full">
       {/* Filter Tabs */}
       <div className="flex gap-2 mb-4 overflow-x-auto pb-2">
-        {(['ALL', 'PLACED', 'PREPARING', 'READY', 'COLLECTED'] as const).map(status => (
+        {(['ALL', OrderStatus.PLACED, OrderStatus.PREPARING, OrderStatus.READY, OrderStatus.COLLECTED] as const).map(status => (
           <button
             key={status}
             onClick={() => setFilter(status)}

@@ -143,3 +143,17 @@ export type MenuAddon = {
   name: string
   price: number
 }
+export type Recipe = {
+  id: string
+  menu_item_id: string
+  name: string
+}
+
+export type RecipeItem = {
+  id: string
+  recipe_id: string
+  ingredient_id?: string | null
+  sub_recipe_id?: string | null
+  quantity: number
+  yield_percent?: number
+}

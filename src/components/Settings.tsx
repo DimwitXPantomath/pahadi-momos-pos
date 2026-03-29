@@ -1,16 +1,4 @@
-type Printer = {
-  id: string
-  name: string
-  role: "BILL" | "KOT" | "BOTH"
-}
-
-type POSSettings = {
-  kdsEnabled: boolean
-  delayAlertMinutes: number
-  soundAlert: boolean
-  autoSortOrders: boolean
-  printers: Printer[]
-}
+import { POSSettings } from "@/types/pos"
 
 type Props = {
   settings: POSSettings

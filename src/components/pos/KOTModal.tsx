@@ -2,9 +2,7 @@ import { motion } from 'framer-motion';
 import { CartItem } from '@/types/pos';
 import { ChefHat, Printer, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, } from '@/components/ui/dialog';
-import type { Outlet } from "@/types/outlet";
-import type { MenuItem } from "@/types/menu";
+import { Dialog, DialogContent } from '@/components/ui/dialog';
 
 
 

@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabase";
-import type { Ingredient, OrderItem, RecipeItem, SubRecipe } from "@/types/pos";
+import type { Ingredient, OrderItem, RecipeItem, SubRecipe, Recipe } from "@/types/pos";
 import QRCode from "react-qr-code";
 import { OrderStatus } from "@/types/pos";
 import { useState, useEffect, useMemo, useRef } from "react";
@@ -68,6 +68,10 @@ export default function Index() {
   const [newIngredientUnit, setNewIngredientUnit] = useState("")
   const [subRecipes, setSubRecipes] = useState<SubRecipe[]>([])
   const [newSubRecipe, setNewSubRecipe] = useState("")
+  const [selectedSubRecipe, setSelectedSubRecipe] = useState<SubRecipe | null>(null)
+  const [selectedIngredient, setSelectedIngredient] = useState("")
+  const [quantity, setQuantity] = useState("")
+  const [subRecipeItems, setSubRecipeItems] = useState<any[]>([])
   const alertedOrdersRef = useRef<Set<string>>(new Set())
   const [yieldPercent, setYieldPercent] = useState("100")
   const [recipes, setRecipes] = useState<Recipe[]>([])
@@ -173,7 +177,7 @@ export default function Index() {
   useEffect(() => {
     const load = async () => {
       const data = await getSmartSuggestions()
-      setSuggestions(data.filter(Boolean))
+      setSuggestions(data.filter((s): s is string => Boolean(s)))
     }
 
     load()
@@ -527,6 +531,19 @@ export default function Index() {
     })
 
     return map
+  }
+
+  const addSubRecipe = async () => {
+    if (!newSubRecipe) return
+    const { data } = await supabase
+      .from("sub_recipes")
+      .insert({ name: newSubRecipe })
+      .select()
+      .single()
+    if (data) {
+      setSubRecipes(prev => [...prev, data])
+      setNewSubRecipe("")
+    }
   }
 
   const addIngredient = async () => {
