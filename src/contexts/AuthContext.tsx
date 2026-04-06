@@ -45,8 +45,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   useEffect(() => {
-    // Check current session on mount
+    // Safety timeout — never stay stuck loading forever
+    const timeout = setTimeout(() => {
+      setIsLoading(false)
+    }, 3000)
+
     supabase.auth.getSession().then(async ({ data: { session } }) => {
+      clearTimeout(timeout)
       setUser(session?.user ?? null)
 
       if (session?.user) {
