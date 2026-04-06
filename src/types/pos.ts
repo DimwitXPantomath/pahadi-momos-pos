@@ -1,11 +1,113 @@
-export const categories = [
-  "All",
-  "Coffee",
-  "Tea",
-  "Pastries",
-  "Food",
-  "Beverages",
-];
+// ─── Menu ────────────────────────────────────────────────────────────────────
+
+export type MenuSize = {
+  label: string
+  price: number
+}
+
+export type MenuAddon = {
+  name: string
+  price: number
+}
+
+export type MenuItem = {
+  id: string
+  name: string
+  price: number
+  category_id: string
+  available: boolean
+  is_veg: boolean
+  created_at?: string
+  sizes?: MenuSize[]
+  addons?: MenuAddon[]
+  station?: "MOMO" | "TANDOOR" | "DRINKS" | "GENERAL"
+}
+
+// ─── Cart & Order Items ───────────────────────────────────────────────────────
+
+export type OrderItem = {
+  id: string
+  name: string
+  price: number
+  quantity: number
+  category?: string
+  baseId?: string
+  size?: { label: string; price: number } | null
+  addons?: { name: string; price: number }[]
+  station?: string
+}
+
+// CartItem mirrors OrderItem — used before order is placed
+export type CartItem = OrderItem
+
+// ─── Orders ──────────────────────────────────────────────────────────────────
+
+export enum OrderStatus {
+  PLACED = "PLACED",
+  PREPARING = "PREPARING",
+  READY = "READY",
+  COLLECTED = "COLLECTED",
+}
+
+export type Order = {
+  id: string
+
+  // identifiers
+  order_no: number
+  token_no: number
+  outlet_id?: string
+
+  // items & totals
+  items: OrderItem[]
+  subtotal?: number
+  gst?: number
+  total: number
+
+  // status
+  status: OrderStatus
+
+  // timestamps
+  created_at: string
+  ready_at?: string | null
+  closed_at?: string | null
+
+  // payment
+  payment_method?: "CASH" | "CARD" | "UPI"
+
+  // optional
+  tableNumber?: number | null
+  rating?: number | null
+  loyalty_points_earned?: number
+  loyalty_points_used?: number
+}
+
+// ─── Outlet ───────────────────────────────────────────────────────────────────
+
+export type OutletInfo = {
+  id: string
+  name: string
+  taxRate: number
+  address?: string
+  phone?: string
+  gst_number?: string
+}
+
+// ─── POS Settings ─────────────────────────────────────────────────────────────
+
+export type POSSettings = {
+  kdsEnabled: boolean
+  delayAlertMinutes: number
+  soundAlert: boolean
+  autoSortOrders: boolean
+  customerDisplayEnabled: boolean
+  printers: {
+    id: string
+    name: string
+    role: "BILL" | "KOT" | "BOTH"
+  }[]
+}
+
+// ─── Ingredients & Stock ──────────────────────────────────────────────────────
 
 export type Ingredient = {
   id: string
@@ -22,6 +124,8 @@ export type IngredientPrice = {
   price_per_unit: number
 }
 
+// ─── Recipes ──────────────────────────────────────────────────────────────────
+
 export type SubRecipe = {
   id: string
   name: string
@@ -34,115 +138,10 @@ export type SubRecipeItem = {
   sub_recipe_id: string
   ingredient_id: string
   quantity: number
-
   yield_percent?: number
   wastage?: number
 }
 
-export type OrderItem = {
-  id: string
-  name: string
-  price: number
-  quantity: number
-  category?: string;
-
-  baseId?: string
-  size?: { label: string; price: number } | null
-  addons?: { name: string; price: number }[]
-
-  station?: string
-}
-
-export interface CartItem {
-  id: string;
-  name: string;
-  price: number;
-  quantity: number;
-  category?: string;
-  size?: string
-};
-
-export type OutletInfo = {
-  id: string;
-  name: string;
-  taxRate: number;
-  address?: string;
-  phone?: string;
-};
-
-
-
-export enum OrderStatus {
-  PLACED = "PLACED",
-  PREPARING = "PREPARING",
-  READY = "READY",
-  COLLECTED = "COLLECTED",
-}
-
-export type Order = {
-  id: string
-
-  // core identifiers
-  order_no: number
-  token_no: number
-  outlet_id?: string   // optional (safe for now)
-
-  // order data
-  items: OrderItem[]
-  total: number
-  status: OrderStatus
-
-  // timestamps
-  created_at: string
-  ready_at?: string | null
-
-  // optional business fields
-  payment_method?: "CASH" | "CARD" | "UPI"
-  tableNumber?: number | null
-  rating?: number | null
-}
-
-export type POSSettings = {
-  kdsEnabled: boolean
-  delayAlertMinutes: number
-  soundAlert: boolean
-  autoSortOrders: boolean
-  printers: {
-    id: string
-    name: string
-    role: "BILL" | "KOT" | "BOTH"
-  }[]
-
-  customerDisplayEnabled: boolean   // ✅ your new feature
-}
-
-export type MenuItem = {
-  id: string;
-  name: string;
-  price: number;
-  category_id: string;
-  available: boolean;
-  created_at?: string;
-  is_veg: boolean;
-  sizes?: MenuSize[]
-  addons?: MenuAddon[]
-  station?: "MOMO" | "TANDOOR" | "DRINKS" | "GENERAL"
-};
-
-export type MenuItemSize = {
-  label: string
-  price: number
-}
-
-export type MenuSize = {
-  label: string
-  price: number
-}
-
-export type MenuAddon = {
-  name: string
-  price: number
-}
 export type Recipe = {
   id: string
   menu_item_id: string

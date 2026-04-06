@@ -1,4 +1,10 @@
-import { POSSettings } from "@/types/pos"
+import type { POSSettings } from "@/types/pos"
+
+type Printer = {
+  id: string
+  name: string
+  role: "BILL" | "KOT" | "BOTH"
+}
 
 type Props = {
   settings: POSSettings

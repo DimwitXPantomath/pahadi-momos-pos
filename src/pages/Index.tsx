@@ -11,6 +11,9 @@ import { printKOT } from "@/utils/printKOT"
 import { printOrder } from "@/utils/printManager"
 import type { POSSettings } from "@/types/pos"
 import type { Order } from "@/types/pos"
+import Layout from "@/components/Layout"
+import { useAuth } from "@/contexts/AuthContext"
+
 
 const OUTLET_ID = "demo-outlet";
 
@@ -25,6 +28,13 @@ type View =
   | "settings"
   | "ingredients"
   | "subrecipes"
+  | "reports"
+
+type Props = {
+  view: View
+  setView: (v: View) => void
+  todayOrderCount: number
+}
 
 type Printer = {
   id: string
@@ -83,6 +93,7 @@ export default function Index() {
   const [recipeQty, setRecipeQty] = useState("")
   const [suggestions, setSuggestions] = useState<string[]>([])
   const [mostOrdered, setMostOrdered] = useState<MenuItem[]>([]);
+  const { profile } = useAuth()
 
   const sidebarItems: { label: string; value: View }[] = [
     { label: "Menu", value: "menu" },
@@ -150,7 +161,7 @@ export default function Index() {
 
   useEffect(() => {
     const interval = setInterval(() => {
-      setTick(t => t + 1)
+      setTick((t: number) => t + 1)
     }, 1000)
 
     return () => clearInterval(interval)
@@ -1301,42 +1312,20 @@ export default function Index() {
 
   return (
     <>
-      <div className="flex h-screen">
+    <Layout
+      view={view}
+      setView={(v) => setView(v as View)}
+      todayOrderCount={orders.length}
+    />
 
-        {/* MOBILE HEADER */}
-        <div className="flex items-center p-4 border-b bg-white shadow-sm md:hidden">
-          <button
-            onClick={() => setSidebarOpen(true)}
-            className="text-2xl"
-          >
-            ☰
-          </button>
-
-          <h1 className="ml-4 font-bold text-lg">
-            PAHADI MOMOS
-          </h1>
-
-          {settings.customerDisplayEnabled && (
-            <button
-              onClick={() => window.open("/display", "_blank")}
-              className="ml-auto bg-black text-white px-3 py-1 rounded"
-            >
-              Display
-            </button>
-          )}
-        </div>
-      <div
-        className={`flex-1 p-6 overflow-y-auto transition-all duration-300 ${
-          sidebarOpen ? "md:ml-56" : ""
-        }`}
-      >
-
-    {sidebarOpen && (
-      <div
-        className="fixed inset-0 bg-black bg-opacity-40 md:hidden z-40"
-        onClick={() => setSidebarOpen(false)}
-      />
-    )}
+    <main style={{
+      marginTop: 56,
+      minHeight: "calc(100vh - 56px)",
+      padding: "24px 16px",
+      maxWidth: 1200,
+      marginLeft: "auto",
+      marginRight: "auto",
+    }}>
 
       {/* SIDEBAR */}
       <div
@@ -2599,8 +2588,7 @@ export default function Index() {
           src="/notification.mp3"
           preload="auto"
         />
-      </div>
-    </div>
-    </>   
+      </main>
+    </>  
   );
 }
