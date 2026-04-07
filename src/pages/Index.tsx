@@ -1327,23 +1327,7 @@ export default function Index() {
       marginRight: "auto",
     }}>
 
-      {/* SIDEBAR */}
-      <div
-        className={`
-          fixed md:relative
-          top-0 left-0
-          h-full
-          w-56
-          bg-black text-white
-          flex flex-col justify-between
-          p-5
-          transform
-          transition-transform duration-300
-          ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}
-          md:translate-x-0
-          z-50
-        `}
-      >
+    
         <div className="flex justify-between items-center mb-6 md:hidden">
           <h2 className="font-bold">PAHADI MOMOS</h2>
 
@@ -1515,8 +1499,6 @@ export default function Index() {
             {orders.length}
           </div>
         </div>
-
-      </div>
 
       {/* MAIN CONTENT */}
       <div style={{
