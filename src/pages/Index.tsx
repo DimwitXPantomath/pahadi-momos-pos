@@ -29,6 +29,7 @@ type View =
   | "ingredients"
   | "subrecipes"
   | "reports"
+  | "loyalty"
 
 type Props = {
   view: View
@@ -62,7 +63,6 @@ export default function Index() {
   const [newCategoryName, setNewCategoryName] = useState("");
   const [newItemIsVeg, setNewItemIsVeg] = useState(true);
   const [vegFilter, setVegFilter] = useState<"all" | "veg" | "nonveg">("all");
-  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [, setTick] = useState(0)
   const placedOrders = orders.filter(o => o.status === OrderStatus.PLACED);
@@ -95,11 +95,6 @@ export default function Index() {
   const [mostOrdered, setMostOrdered] = useState<MenuItem[]>([]);
   const { profile } = useAuth()
 
-  const sidebarItems: { label: string; value: View }[] = [
-    { label: "Menu", value: "menu" },
-    { label: "Orders", value: "orders" },
-    { label: "Order History", value: "history" },
-  ];
 
   const [settings, setSettings] = useState<POSSettings>({
     kdsEnabled: true,
@@ -241,7 +236,13 @@ export default function Index() {
       .select()
       .single()
 
-    if (!error && data) {
+    if (error) {
+      console.error("Category insert error:", error)
+      alert("Could not add category: " + error.message)
+      return
+    }
+
+    if (data) {
       setCategories(prev => [...prev, data])
       setNewCategoryName("")
     }
@@ -1303,11 +1304,25 @@ export default function Index() {
         return `🔥 Highlight ${item.name}`
       }
 
+      return null
     })
   }
 
-
-
+  const viewStyles: Record<string, React.CSSProperties> = {
+    page: { maxWidth: 800, margin: "0 auto" },
+    header: { marginBottom: 24 },
+    title: { fontSize: 24, fontWeight: 800, color: "#111", margin: 0 },
+    subtitle: { color: "#6b7280", fontSize: 14, margin: "4px 0 0" },
+    card: { background: "white", borderRadius: 16, padding: "20px 24px", marginBottom: 16, border: "1px solid #e5e7eb" },
+    cardTitle: { fontSize: 16, fontWeight: 700, color: "#111", margin: "0 0 6px" },
+    cardDesc: { fontSize: 13, color: "#6b7280", margin: "0 0 16px" },
+    formRow: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 },
+    formField: { display: "flex", flexDirection: "column", gap: 6, marginBottom: 16 },
+    label: { fontSize: 13, fontWeight: 600, color: "#374151" },
+    input: { padding: "10px 14px", border: "1.5px solid #e5e7eb", borderRadius: 8, fontSize: 14, outline: "none", color: "#111", background: "white" },
+    primaryBtn: { background: "#111", color: "white", border: "none", borderRadius: 8, padding: "10px 20px", fontSize: 14, fontWeight: 600, cursor: "pointer", width: "100%" },
+    statCard: { background: "#f9f7f4", borderRadius: 12, padding: "16px", textAlign: "center" },
+  }
 
 
   return (
@@ -1326,186 +1341,6 @@ export default function Index() {
       marginLeft: "auto",
       marginRight: "auto",
     }}>
-
-    
-        <div className="flex justify-between items-center mb-6 md:hidden">
-          <h2 className="font-bold">PAHADI MOMOS</h2>
-
-          <button
-            onClick={() => setSidebarOpen(false)}
-            className="text-xl"
-          >
-            ✕
-          </button>
-        </div>
-
-        {/* TOP SECTION */}
-        <div>
-          <h2 className="hidden md:block mb-8 font-bold">
-            PAHADI MOMOS
-          </h2>
-
-          {/* MENU */}
-          <div
-            onClick={() => {
-              setView("menu")
-              setSidebarOpen(false)
-            }}
-            style={{
-              marginBottom: 12,
-              cursor: "pointer",
-              padding: "10px 12px",
-              borderRadius: 6,
-              fontWeight: view === "menu" ? "bold" : "normal",
-              background: view === "menu" ? "#f97316" : "transparent",
-              color: "white",
-            }}
-          >
-            Menu
-          </div>
-
-          {/* ORDERS */}
-          <div
-            onClick={() => {
-              setView("orders")
-              setSidebarOpen(false)
-            }}
-            style={{
-              marginBottom: 12,
-              cursor: "pointer",
-              padding: "10px 12px",
-              borderRadius: 6,
-              fontWeight: view === "orders" ? "bold" : "normal",
-              background: view === "orders" ? "#f97316" : "transparent",
-              color: "white",
-            }}
-          >
-            Orders
-          </div>
-
-          {/* ORDER HISTORY */}
-          <div
-            onClick={() => {
-              setView("history")
-              setSidebarOpen(false)
-            }}
-            style={{
-              marginBottom: 12,
-              cursor: "pointer",
-              padding: "10px 12px",
-              borderRadius: 6,
-              fontWeight: view === "history" ? "bold" : "normal",
-              background: view === "history" ? "#f97316" : "transparent",
-              color: "white",
-            }}
-          >
-            Order History
-          </div>
-        </div>
-
-          {/* SETTINGS */}
-        <div
-          onClick={() => {
-            setView("settings")
-            setSidebarOpen(false)
-          }}
-          style={{
-            marginBottom: 12,
-            cursor: "pointer",
-            padding: "10px 12px",
-            borderRadius: 6,
-            fontWeight: view === "settings" ? "bold" : "normal",
-            background: view === "settings" ? "#f97316" : "transparent",
-            color: "white",
-          }}
-        >
-          Settings
-        </div>
-        
-        {/* MENU MANAGE */}
-        <div
-          onClick={() => {
-            setView("menu_manage")
-            setSidebarOpen(false)
-          }}
-          style={{
-            marginBottom: 12,
-            cursor: "pointer",
-            padding: "10px 12px",
-            borderRadius: 6,
-            fontWeight: view === "menu_manage" ? "bold" : "normal",
-            background: view === "menu_manage" ? "#f97316" : "transparent",
-            color: "white",
-          }}
-        >
-          Menu Management
-        </div>
-        
-        {/* INGREDIENTS */}
-        <div
-          onClick={() => {
-          setView("ingredients")
-          setSidebarOpen(false)
-          }}
-          style={{
-            marginBottom: 12,
-            cursor: "pointer",
-            padding: "10px 12px",
-            borderRadius: 6,
-            fontWeight: view === "ingredients" ? "bold" : "normal",
-            background: view === "ingredients" ? "#f97316" : "transparent",
-            color: "white",
-          }}
-        >
-          Ingredients
-        </div>
-
-        <div onClick={() => setView("procurement")}>
-          Procurement
-        </div>
-
-        <div onClick={() => setView("analytics")}>
-          Analytics
-        </div>
-        
-        {/* SUB RECIPES */}
-        <div onClick={() => {
-          setView("subrecipes")
-          setSidebarOpen(false)
-          }}
-          style={{
-            marginBottom: 12,
-            cursor: "pointer",
-            padding: "10px 12px",
-            borderRadius: 6,
-            fontWeight: view === "subrecipes" ? "bold" : "normal",
-            background: view === "subrecipes" ? "#f97316" : "transparent",
-            color: "white",
-          }}
-          >
-            Sub Recipes
-          </div>
-
-        {/* BOTTOM SECTION */}
-        <div style={{
-          background: "#222",
-          padding: 15,
-          borderRadius: 8
-        }}>
-          <div style={{ fontSize: 14 }}>
-            Today Orders
-          </div>
-          <div style={{ fontSize: 22, fontWeight: "bold" }}>
-            {orders.length}
-          </div>
-        </div>
-
-      {/* MAIN CONTENT */}
-      <div style={{
-        flex: 1,
-        padding: 30,
-        overflowY: "auto"
-      }}>
 
         {/* MENU VIEW */}
         {view === "menu" && (
@@ -2069,43 +1904,6 @@ export default function Index() {
           </div>
         )}
 
-      </div>
-
-      {view === "history" && (
-        <div>
-          <h2 className="text-2xl font-bold mb-4">Order History</h2>
-
-          {orders.length === 0 && (
-            <p className="text-gray-500">No past orders</p>
-          )}
-
-          {orders.map(order => (
-            <div
-              key={order.id}
-              className="border rounded-lg p-4 mb-3"
-            >
-              <div className="flex justify-between">
-                <p className="font-semibold">
-                  Token #{order.token_no}
-                </p>
-
-                <p className="text-sm">
-                  {order.status}
-                </p>
-              </div>
-
-              <p className="text-sm text-gray-600">
-                ₹{order.total}
-              </p>
-
-              <p className="text-xs text-gray-400">
-                ⏱ {getOrderTime(order.created_at)}
-              </p>
-            </div>
-          ))}
-        </div>
-      )}
-
       {view === "settings" && (
         <Settings
           settings={settings}
@@ -2518,6 +2316,135 @@ export default function Index() {
 
               </>
             )}
+          </div>
+        </div>
+      )}
+
+
+      {/* LOYALTY VIEW */}
+      {view === "loyalty" && (
+        <div style={viewStyles.page}>
+          <div style={viewStyles.header}>
+            <h2 style={viewStyles.title}>Loyalty Points</h2>
+            <p style={viewStyles.subtitle}>Manage your customer loyalty program</p>
+          </div>
+          <div style={viewStyles.card}>
+            <h3 style={viewStyles.cardTitle}>🔗 Customer Loyalty QR</h3>
+            <p style={viewStyles.cardDesc}>Customers scan this to join your loyalty program and check their points</p>
+            <div style={{ display: "flex", justifyContent: "center", margin: "20px 0" }}>
+              <QRCode value={`${window.location.origin}/loyalty/${OUTLET_ID}`} size={160} />
+            </div>
+            <p style={{ textAlign: "center", fontSize: 13, color: "#6b7280" }}>Print and place this at your counter</p>
+          </div>
+          <div style={viewStyles.card}>
+            <h3 style={viewStyles.cardTitle}>⚙️ Points Settings</h3>
+            <div style={viewStyles.formRow}>
+              <div style={viewStyles.formField}>
+                <label style={viewStyles.label}>Points per ₹100 spent</label>
+                <input type="number" defaultValue={10} style={viewStyles.input} placeholder="e.g. 10" />
+              </div>
+              <div style={viewStyles.formField}>
+                <label style={viewStyles.label}>₹ value per point</label>
+                <input type="number" defaultValue={0.5} step={0.1} style={viewStyles.input} placeholder="e.g. 0.5" />
+              </div>
+            </div>
+            <div style={viewStyles.formField}>
+              <label style={viewStyles.label}>Minimum points to redeem</label>
+              <input type="number" defaultValue={100} style={viewStyles.input} placeholder="e.g. 100" />
+            </div>
+            <button style={viewStyles.primaryBtn}>Save Settings</button>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16, marginBottom: 24 }}>
+            {[
+              { label: "Total customers", value: "—", icon: "👥" },
+              { label: "Points issued", value: "—", icon: "⭐" },
+              { label: "Points redeemed", value: "—", icon: "🎁" },
+            ].map(stat => (
+              <div key={stat.label} style={viewStyles.statCard}>
+                <div style={{ fontSize: 24, marginBottom: 8 }}>{stat.icon}</div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: "#111" }}>{stat.value}</div>
+                <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>{stat.label}</div>
+              </div>
+            ))}
+          </div>
+          <div style={viewStyles.card}>
+            <h3 style={viewStyles.cardTitle}>📋 Recent Activity</h3>
+            <p style={{ color: "#9ca3af", fontSize: 14, textAlign: "center", padding: "20px 0" }}>
+              Customer loyalty activity will appear here once customers start scanning
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* REPORTS VIEW */}
+      {view === "reports" && (
+        <div style={viewStyles.page}>
+          <div style={viewStyles.header}>
+            <h2 style={viewStyles.title}>Reports</h2>
+            <p style={viewStyles.subtitle}>Export and share your business reports</p>
+          </div>
+          <div style={viewStyles.card}>
+            <h3 style={viewStyles.cardTitle}>📊 Today's Summary</h3>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, margin: "16px 0" }}>
+              <div style={viewStyles.statCard}>
+                <div style={{ fontSize: 22, fontWeight: 800, color: "#111" }}>
+                  {orders.filter(o => new Date(o.created_at).toDateString() === new Date().toDateString()).length}
+                </div>
+                <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>Orders today</div>
+              </div>
+              <div style={viewStyles.statCard}>
+                <div style={{ fontSize: 22, fontWeight: 800, color: "#111" }}>
+                  ₹{orders.filter(o => new Date(o.created_at).toDateString() === new Date().toDateString()).reduce((sum, o) => sum + o.total, 0).toFixed(0)}
+                </div>
+                <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>Revenue today</div>
+              </div>
+            </div>
+          </div>
+          <div style={viewStyles.card}>
+            <h3 style={viewStyles.cardTitle}>💬 Send to WhatsApp</h3>
+            <p style={viewStyles.cardDesc}>Send today's summary directly to your WhatsApp</p>
+            <div style={viewStyles.formField}>
+              <label style={viewStyles.label}>Your WhatsApp number (with country code)</label>
+              <input type="tel" placeholder="e.g. 919876543210" style={viewStyles.input} id="whatsapp-number" />
+            </div>
+            <button
+              style={{ ...viewStyles.primaryBtn, background: "#25d366", marginTop: 8 }}
+              onClick={() => {
+                const todayOrders = orders.filter(o => new Date(o.created_at).toDateString() === new Date().toDateString())
+                const revenue = todayOrders.reduce((sum, o) => sum + o.total, 0)
+                const cashRevenue = todayOrders.filter(o => o.payment_method === "CASH").reduce((sum, o) => sum + o.total, 0)
+                const upiRevenue = todayOrders.filter(o => o.payment_method === "UPI").reduce((sum, o) => sum + o.total, 0)
+                const topItems: Record<string, number> = {}
+                todayOrders.forEach(o => o.items?.forEach((i: any) => { topItems[i.name] = (topItems[i.name] || 0) + i.quantity }))
+                const top3 = Object.entries(topItems).sort((a,b) => b[1]-a[1]).slice(0,3).map(([n,q]) => `  • ${n}: ${q}`).join("\n")
+                const msg = `🌿 *Praang Daily Report*\n📅 ${new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" })}\n\n📦 Total Orders: ${todayOrders.length}\n💰 Revenue: ₹${revenue.toFixed(0)}\n\n💵 Cash: ₹${cashRevenue.toFixed(0)}\n📱 UPI: ₹${upiRevenue.toFixed(0)}\n\n⭐ Top Items:\n${top3 || "  No orders yet"}\n\n_Sent via Praang POS_`
+                const phone = (document.getElementById("whatsapp-number") as HTMLInputElement)?.value || ""
+                window.open(`https://wa.me/${phone.replace(/\D/g,"")}?text=${encodeURIComponent(msg)}`, "_blank")
+              }}
+            >📤 Send WhatsApp Report</button>
+          </div>
+          <div style={viewStyles.card}>
+            <h3 style={viewStyles.cardTitle}>📄 Export as PDF</h3>
+            <p style={viewStyles.cardDesc}>Download today's order report as PDF</p>
+            <button style={{ ...viewStyles.primaryBtn, marginTop: 8 }} onClick={() => window.print()}>🖨️ Print / Save as PDF</button>
+          </div>
+          <div style={viewStyles.card}>
+            <h3 style={viewStyles.cardTitle}>📊 Export as Excel / CSV</h3>
+            <p style={viewStyles.cardDesc}>Download order data as CSV (opens in Excel)</p>
+            <button
+              style={{ ...viewStyles.primaryBtn, background: "#16a34a", marginTop: 8 }}
+              onClick={() => {
+                const todayOrders = orders.filter(o => new Date(o.created_at).toDateString() === new Date().toDateString())
+                const rows = [["Token","Items","Total","Payment","Status","Time"], ...todayOrders.map(o => [o.token_no, o.items?.map((i:any) => `${i.name}x${i.quantity}`).join(" | ") || "", o.total, o.payment_method || "", o.status, new Date(o.created_at).toLocaleTimeString()])]
+                const csv = rows.map(r => r.join(",")).join("\n")
+                const blob = new Blob([csv], { type: "text/csv" })
+                const url = URL.createObjectURL(blob)
+                const a = document.createElement("a")
+                a.href = url
+                a.download = `praang-orders-${new Date().toISOString().split("T")[0]}.csv`
+                a.click()
+              }}
+            >⬇️ Download CSV / Excel</button>
           </div>
         </div>
       )}
