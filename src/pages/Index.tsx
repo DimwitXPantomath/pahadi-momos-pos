@@ -102,6 +102,7 @@ export default function Index() {
     soundAlert: true,
     autoSortOrders: true,
     customerDisplayEnabled: false,
+    posMode: "SELF_SERVICE" as "SELF_SERVICE" | "TABLE_SERVICE",
     printers: [
       {
         id: "main",
@@ -110,6 +111,19 @@ export default function Index() {
       }
     ]
   })
+
+  const [selectedTable, setSelectedTable] = useState<string | null>(null)
+  const [orderType, setOrderType] = useState<"DINE_IN" | "TAKEAWAY">("DINE_IN")
+  const [orderNotes, setOrderNotes] = useState("")
+  const [searchQuery, setSearchQuery] = useState("")
+  const [tables, setTables] = useState([
+    { id: "T1", seats: 2, status: "available" },
+    { id: "T2", seats: 4, status: "available" },
+    { id: "T3", seats: 4, status: "occupied" },
+    { id: "T4", seats: 2, status: "available" },
+    { id: "T5", seats: 6, status: "occupied" },
+    { id: "T6", seats: 4, status: "available" },
+  ])
 
   const salesData = useMemo(() => {
 
@@ -1344,346 +1358,282 @@ export default function Index() {
 
         {/* MENU VIEW */}
         {view === "menu" && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div style={{ display: "flex", flexDirection: "column", gap: 0, height: "calc(100vh - 80px)" }}>
 
-            {/* LEFT SIDE - MENU */}
-            <div>
-
-              {/* Veg Filter */}
-              <div className="flex gap-3 mb-4 flex-wrap">
-                <button
-                  onClick={() => setVegFilter("all")}
-                  className={`px-3 py-1 rounded ${
-                    vegFilter === "all" ? "bg-black text-white" : "bg-gray-200"
-                  }`}
-                >
-                  All
-                </button>
-
-                <button
-                  onClick={() => setVegFilter("veg")}
-                  className={`px-3 py-1 rounded ${
-                    vegFilter === "veg" ? "bg-green-600 text-white" : "bg-gray-200"
-                  }`}
-                >
-                  Veg
-                </button>
-
-                <button
-                  onClick={() => setVegFilter("nonveg")}
-                  className={`px-3 py-1 rounded ${
-                    vegFilter === "nonveg" ? "bg-red-600 text-white" : "bg-gray-200"
-                  }`}
-                >
-                  Non-Veg
-                </button>
-              </div>
-
-              {/* Category Buttons */}
-              <div className="flex gap-2 mb-4 overflow-x-auto">
-                {categories.map(cat => (
-                  <button
-                    key={cat.id}
-                    onClick={() => setActiveCategory(cat.id)}
-                    className={`px-4 py-2 rounded-lg font-medium ${
-                      activeCategory === cat.id
-                        ? "bg-black text-white"
-                        : "bg-gray-200"
-                    }`}
-                  >
-                    {cat.name}
-                  </button>
-                ))}
-              </div>
-
-              <div style={{ marginBottom: 10 }}>
-                <h3>⭐ Most Ordered</h3>
-
-                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                  {mostOrdered.map(item => (
+            {/* TABLE SELECTOR — only in table service mode */}
+            {settings.posMode === "TABLE_SERVICE" && (
+              <div style={{ background: "white", borderRadius: 12, padding: "12px 16px", marginBottom: 12, border: "1px solid #e5e7eb" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                  <span style={{ fontWeight: 700, fontSize: 14 }}>Select Table</span>
+                  <div style={{ display: "flex", gap: 12, fontSize: 11, color: "#6b7280" }}>
+                    <span><span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: "#16a34a", marginRight: 4 }}></span>Available</span>
+                    <span><span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: "#dc2626", marginRight: 4 }}></span>Occupied</span>
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {tables.map(t => (
                     <button
-                      key={item.id}
-                      onClick={() => addToCart(item)}
+                      key={t.id}
+                      disabled={t.status === "occupied"}
+                      onClick={() => setSelectedTable(t.id === selectedTable ? null : t.id)}
                       style={{
-                        padding: "10px",
-                        background: "#ffe58a",
-                        borderRadius: "8px",
-                        border: "none"
+                        width: 60, height: 52, borderRadius: 8, border: "1.5px solid",
+                        borderColor: selectedTable === t.id ? "#111" : t.status === "occupied" ? "#fecaca" : "#bbf7d0",
+                        background: selectedTable === t.id ? "#111" : t.status === "occupied" ? "#fef2f2" : "#f0fdf4",
+                        color: selectedTable === t.id ? "white" : t.status === "occupied" ? "#dc2626" : "#16a34a",
+                        cursor: t.status === "occupied" ? "not-allowed" : "pointer",
+                        display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2
                       }}
                     >
-                      {item.name}
+                      <span style={{ fontWeight: 700, fontSize: 14 }}>{t.id}</span>
+                      <span style={{ fontSize: 9, opacity: 0.8 }}>{t.seats} seats</span>
                     </button>
                   ))}
                 </div>
+                {selectedTable && (
+                  <div style={{ marginTop: 8, fontSize: 12, color: "#16a34a", fontWeight: 600 }}>
+                    ✓ Table {selectedTable} selected
+                  </div>
+                )}
               </div>
+            )}
 
-              {/* Menu Items */}
-              <div className="space-y-3">
-                {menuItems
-                  .filter(item => {
-                    if (item.category_id !== activeCategory) return false
-                    if (!item.available) return false
+            {/* TOKEN MESSAGE — only in self service mode */}
+            {settings.posMode === "SELF_SERVICE" && (
+              <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 10, padding: "10px 14px", marginBottom: 12, fontSize: 12, color: "#16a34a", display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ fontSize: 16 }}>🎟️</span>
+                Token will be generated automatically after order is placed
+              </div>
+            )}
 
-                    if (vegFilter === "veg" && !item.is_veg) return false
-                    if (vegFilter === "nonveg" && item.is_veg) return false
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: 16, flex: 1, minHeight: 0 }}>
 
-                    return true
-                  })
-                  .map(item => (
-                    <div
-                      key={item.id}
-                      className="flex justify-between items-center border rounded-lg p-4 text-lg"
-                    >
-                      <div className="flex items-center gap-2">
+              {/* LEFT — MENU */}
+              <div style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
 
-                        <span
-                          className={`w-3 h-3 rounded-full ${
-                            item.is_veg ? "bg-green-600" : "bg-red-600"
-                          }`}
-                        />
+                {/* Search + Veg filter */}
+                <div style={{ display: "flex", gap: 8, marginBottom: 10, alignItems: "center" }}>
+                  <input
+                    placeholder="Search menu items..."
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                    style={{ flex: 1, padding: "8px 12px", border: "1.5px solid #e5e7eb", borderRadius: 8, fontSize: 13, outline: "none" }}
+                  />
+                  <button
+                    onClick={() => setVegFilter("all")}
+                    style={{ padding: "7px 12px", borderRadius: 8, border: "1.5px solid", fontSize: 12, fontWeight: 600, cursor: "pointer", borderColor: vegFilter === "all" ? "#111" : "#e5e7eb", background: vegFilter === "all" ? "#111" : "white", color: vegFilter === "all" ? "white" : "#374151" }}
+                  >All</button>
+                  <button
+                    onClick={() => setVegFilter("veg")}
+                    style={{ padding: "7px 12px", borderRadius: 8, border: "1.5px solid", fontSize: 12, fontWeight: 600, cursor: "pointer", borderColor: vegFilter === "veg" ? "#16a34a" : "#e5e7eb", background: vegFilter === "veg" ? "#16a34a" : "white", color: vegFilter === "veg" ? "white" : "#374151" }}
+                  >🟢 Veg</button>
+                  <button
+                    onClick={() => setVegFilter("nonveg")}
+                    style={{ padding: "7px 12px", borderRadius: 8, border: "1.5px solid", fontSize: 12, fontWeight: 600, cursor: "pointer", borderColor: vegFilter === "nonveg" ? "#dc2626" : "#e5e7eb", background: vegFilter === "nonveg" ? "#dc2626" : "white", color: vegFilter === "nonveg" ? "white" : "#374151" }}
+                  >🔴 Non-veg</button>
+                </div>
 
-                        <div>
+                {/* Category scroll */}
+                <div style={{ display: "flex", gap: 6, marginBottom: 12, overflowX: "auto", paddingBottom: 4 }}>
+                  <button
+                    onClick={() => setActiveCategory("all")}
+                    style={{ padding: "5px 14px", borderRadius: 20, border: "1.5px solid", fontSize: 12, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", borderColor: activeCategory === "all" ? "#111" : "#e5e7eb", background: activeCategory === "all" ? "#111" : "white", color: activeCategory === "all" ? "white" : "#374151" }}
+                  >All</button>
+                  {categories.map(cat => (
+                    <button
+                      key={cat.id}
+                      onClick={() => setActiveCategory(cat.id)}
+                      style={{ padding: "5px 14px", borderRadius: 20, border: "1.5px solid", fontSize: 12, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", borderColor: activeCategory === cat.id ? "#111" : "#e5e7eb", background: activeCategory === cat.id ? "#111" : "white", color: activeCategory === cat.id ? "white" : "#374151" }}
+                    >{cat.name}</button>
+                  ))}
+                </div>
 
-                          <p className="font-semibold">{item.name}</p>
+                {/* Most ordered strip */}
+                {mostOrdered.length > 0 && (
+                  <div style={{ marginBottom: 12 }}>
+                    <p style={{ fontSize: 12, fontWeight: 700, color: "#6b7280", marginBottom: 6 }}>⭐ Most ordered</p>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      {mostOrdered.map(item => (
+                        <button
+                          key={item.id}
+                          onClick={() => addToCart(item)}
+                          style={{ padding: "5px 12px", background: "#fffbeb", border: "1.5px solid #fbbf24", borderRadius: 20, fontSize: 12, cursor: "pointer", color: "#92400e", fontWeight: 600 }}
+                        >{item.name}</button>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
-                          <p className="text-sm text-gray-500">
-                            ₹{item.price}
-                          </p>
-
-                          <button
-                            onClick={() => toggleAvailability(item.id, item.available)}
-                            className={`text-xs mt-1 ${
-                              item.available ? "text-green-600" : "text-red-600"
-                            }`}
-                          >
-                            {item.available ? "🟢 Available" : "🔴 Out of Stock"}
-                          </button>
-
-                            {!item.available && (
-                              <p className="text-xs text-red-500 mt-1">
-                                Item currently unavailable
-                              </p>
-                            )}
-
+                {/* Menu grid */}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, overflowY: "auto", flex: 1 }}>
+                  {menuItems
+                    .filter(item => {
+                      if (activeCategory !== "all" && item.category_id !== activeCategory) return false
+                      if (!item.available) return false
+                      if (vegFilter === "veg" && !item.is_veg) return false
+                      if (vegFilter === "nonveg" && item.is_veg) return false
+                      if (searchQuery && !item.name.toLowerCase().includes(searchQuery.toLowerCase())) return false
+                      return true
+                    })
+                    .map(item => (
+                      <div
+                        key={item.id}
+                        style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: 10, padding: 10, cursor: "pointer", transition: "border-color .15s" }}
+                      >
+                        {/* Item image placeholder */}
+                        <div style={{ width: "100%", height: 64, background: "#f5f5f0", borderRadius: 6, marginBottom: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28 }}>
+                          {item.is_veg ? "🥗" : "🍖"}
                         </div>
 
+                        {/* Veg dot + name */}
+                        <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 2 }}>
+                          <span style={{ width: 8, height: 8, borderRadius: "50%", background: item.is_veg ? "#16a34a" : "#dc2626", display: "inline-block", flexShrink: 0 }}></span>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: "#111", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.name}</span>
+                        </div>
+
+                        <p style={{ fontSize: 13, fontWeight: 700, color: "#f97316", marginBottom: 8 }}>₹{item.price}</p>
+
+                        {/* Add button / size options */}
+                        {item.sizes && item.sizes.length > 0 ? (
+                          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                            {item.sizes.map(size => {
+                              const cartItem = cart.find(i => i.id === `${item.id}-${size.label}`)
+                              return cartItem ? (
+                                <div key={size.label} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                                  <button onClick={() => decreaseQty(cartItem.id)} style={{ width: 22, height: 22, borderRadius: 4, border: "1px solid #e5e7eb", background: "#f3f4f6", cursor: "pointer", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center" }}>-</button>
+                                  <span style={{ fontSize: 12, fontWeight: 700, minWidth: 14, textAlign: "center" }}>{cartItem.quantity}</span>
+                                  <button onClick={() => addToCart(item, size)} style={{ width: 22, height: 22, borderRadius: 4, border: "none", background: "#111", color: "white", cursor: "pointer", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
+                                </div>
+                              ) : (
+                                <button key={size.label} onClick={() => addToCart(item, size)} disabled={!item.available} style={{ padding: "3px 8px", borderRadius: 6, border: "none", background: "#111", color: "white", fontSize: 11, cursor: "pointer", fontWeight: 600 }}>{size.label}</button>
+                              )
+                            })}
+                          </div>
+                        ) : (
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end" }}>
+                            {(() => {
+                              const cartItem = cart.find(i => i.id === item.id)
+                              return cartItem ? (
+                                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                  <button onClick={() => decreaseQty(cartItem.id)} style={{ width: 24, height: 24, borderRadius: 6, border: "1px solid #e5e7eb", background: "#f3f4f6", cursor: "pointer", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center" }}>-</button>
+                                  <span style={{ fontSize: 13, fontWeight: 700, minWidth: 16, textAlign: "center" }}>{cartItem.quantity}</span>
+                                  <button onClick={() => addToCart(item)} style={{ width: 24, height: 24, borderRadius: 6, border: "none", background: "#111", color: "white", cursor: "pointer", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
+                                </div>
+                              ) : (
+                                <button onClick={() => addToCart(item)} disabled={!item.available} style={{ width: 28, height: 28, borderRadius: "50%", border: "none", background: "#111", color: "white", cursor: "pointer", fontSize: 20, display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1 }}>+</button>
+                              )
+                            })()}
+                          </div>
+                        )}
+
+                        <button
+                          onClick={() => toggleAvailability(item.id, item.available)}
+                          style={{ fontSize: 10, color: item.available ? "#16a34a" : "#dc2626", background: "none", border: "none", cursor: "pointer", padding: 0, marginTop: 4 }}
+                        >{item.available ? "🟢 Available" : "🔴 Out of stock"}</button>
                       </div>
-
-                    {item.sizes ? (
-
-                      <div className="flex gap-2 flex-wrap">
-
-                        {item.sizes.map(size => {
-
-                          const cartItem = cart.find(
-                            i => i.id === `${item.id}-${size.label}`
-                          )
-
-                          if (cartItem) {
-
-                            return (
-
-                              <div
-                                key={size.label}
-                                className="flex items-center gap-2"
-                              >
-
-                                <button
-                                  onClick={() => decreaseQty(cartItem.id)}
-                                  className="px-2 py-1 bg-gray-200 rounded"
-                                >
-                                  -
-                                </button>
-
-                                <span className="text-sm font-semibold">
-                                  {cartItem.quantity}
-                                </span>
-
-                                <button
-                                  onClick={() => addToCart(item, size)}
-                                  className="px-2 py-1 bg-black text-white rounded"
-                                >
-                                  +
-                                </button>
-
-                              </div>
-
-                            )
-
-                          }
-
-                          return (
-
-                            <button
-                              key={size.label}
-                              disabled={!item.available}
-                              onClick={() => addToCart(item, size)}
-                              className={`px-3 py-2 rounded text-sm ${
-                                item.available
-                                  ? "bg-black text-white"
-                                  : "bg-gray-300 text-gray-500 cursor-not-allowed"
-                              }`}
-                            >
-                              {size.label}
-                            </button>
-
-                          )
-
-                        })}
-
-                      </div>
-
-                    ) : (
-
-                      <button
-                        disabled={!item.available}
-                        onClick={() => addToCart(item)}
-                        className="bg-black text-white px-4 py-2 rounded-lg"
-                      >
-                        Add
-                      </button>
-
-                    )}
-
-                    </div>
-                ))}
+                    ))}
+                </div>
               </div>
-            </div>
 
-            {/* RIGHT SIDE - CART */}
-            <div className="border rounded-lg p-4 sticky top-0">
+              {/* RIGHT — CART */}
+              <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: 12, display: "flex", flexDirection: "column", minHeight: 0 }}>
 
-              <h3 className="text-lg font-semibold mb-4">Cart</h3>
+                <div style={{ padding: "12px 16px", borderBottom: "1px solid #e5e7eb" }}>
+                  <p style={{ fontWeight: 700, fontSize: 15, margin: 0 }}>Your order</p>
+                  {settings.posMode === "TABLE_SERVICE" && selectedTable && (
+                    <p style={{ fontSize: 12, color: "#f97316", margin: "2px 0 0", fontWeight: 600 }}>Table {selectedTable}</p>
+                  )}
+                  {settings.posMode === "TABLE_SERVICE" && !selectedTable && (
+                    <p style={{ fontSize: 12, color: "#dc2626", margin: "2px 0 0" }}>Please select a table first</p>
+                  )}
+                </div>
 
-              {cart.length === 0 && (
-                <p className="text-gray-500">No items added</p>
-              )}
-
-              <div className="space-y-3">
-                {sizeSelectorItem?.addons && sizeSelectorItem.addons.length > 0 && (
-
-                  <div className="mt-4">
-
-                    <h4 className="font-semibold mb-2">
-                      Add-ons
-                    </h4>
-
-                    {sizeSelectorItem.addons?.map(addon => {
-
-                      const selected = selectedAddons.find(a => a.name === addon.name)
-
-                      return (
-
-                        <label
-                          key={addon.name}
-                          className="flex justify-between items-center border rounded p-2 mb-2"
-                        >
-
-                          <span>
-                            {addon.name}
-                          </span>
-
-                          <input
-                            type="checkbox"
-                            checked={!!selected}
-                            onChange={() => {
-
-                              if (selected) {
-                                setSelectedAddons(prev =>
-                                  prev.filter(a => a.name !== addon.name)
-                                )
-                              } else {
-                                setSelectedAddons(prev => [...prev, addon])
-                              }
-
-                            }}
-                          />
-
-                        </label>
-
-                      )
-
-                    })}
-
+                {/* Order type toggle — table service only */}
+                {settings.posMode === "TABLE_SERVICE" && (
+                  <div style={{ display: "flex", gap: 4, padding: "10px 16px 0" }}>
+                    <button
+                      onClick={() => setOrderType("DINE_IN")}
+                      style={{ flex: 1, padding: "6px", borderRadius: 8, border: "1.5px solid", fontSize: 12, fontWeight: 600, cursor: "pointer", borderColor: orderType === "DINE_IN" ? "#111" : "#e5e7eb", background: orderType === "DINE_IN" ? "#111" : "white", color: orderType === "DINE_IN" ? "white" : "#374151" }}
+                    >Dine-in</button>
+                    <button
+                      onClick={() => setOrderType("TAKEAWAY")}
+                      style={{ flex: 1, padding: "6px", borderRadius: 8, border: "1.5px solid", fontSize: 12, fontWeight: 600, cursor: "pointer", borderColor: orderType === "TAKEAWAY" ? "#111" : "#e5e7eb", background: orderType === "TAKEAWAY" ? "#111" : "white", color: orderType === "TAKEAWAY" ? "white" : "#374151" }}
+                    >Takeaway</button>
                   </div>
-
                 )}
-                {cart.map(i => (
-                  <div
-                    key={i.id}
-                    className="flex justify-between items-center"
-                  >
-                    <div>
-                      <p>{i.name}</p>
-                      <p className="text-sm text-gray-500">
-                        ₹{i.price} × {i.quantity}
-                      </p>
+
+                {/* Cart items */}
+                <div style={{ flex: 1, overflowY: "auto", padding: "10px 16px" }}>
+                  {cart.length === 0 ? (
+                    <p style={{ color: "#9ca3af", fontSize: 13, textAlign: "center", paddingTop: 20 }}>No items added yet</p>
+                  ) : cart.map(i => (
+                    <div key={i.id} style={{ display: "flex", alignItems: "center", gap: 8, paddingBottom: 10, marginBottom: 10, borderBottom: "1px solid #f3f4f6" }}>
+                      <div style={{ flex: 1 }}>
+                        <p style={{ fontSize: 13, fontWeight: 600, margin: 0 }}>{i.name}</p>
+                        <p style={{ fontSize: 11, color: "#6b7280", margin: 0 }}>₹{i.price} × {i.quantity}</p>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                        <button onClick={() => decreaseQty(i.id)} style={{ width: 22, height: 22, borderRadius: 4, border: "1px solid #e5e7eb", background: "#f3f4f6", cursor: "pointer", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center" }}>-</button>
+                        <span style={{ fontSize: 12, fontWeight: 700, minWidth: 16, textAlign: "center" }}>{i.quantity}</span>
+                        <button onClick={() => increaseQty(i.id)} style={{ width: 22, height: 22, borderRadius: 4, border: "none", background: "#111", color: "white", cursor: "pointer", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
+                      </div>
+                      <span style={{ fontSize: 13, fontWeight: 700, minWidth: 40, textAlign: "right" }}>₹{(i.price * i.quantity).toFixed(0)}</span>
                     </div>
+                  ))}
+                </div>
 
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => decreaseQty(i.id)}
-                        className="px-3 py-1 bg-gray-200 rounded"
-                      >
-                        -
-                      </button>
-
-                      <span>{i.quantity}</span>
-
-                      <button
-                        onClick={() => increaseQty(i.id)}
-                        className="px-3 py-1 bg-gray-200 rounded"
-                      >
-                        +
-                      </button>
-                    </div>
+                {/* Bill summary + payment */}
+                <div style={{ padding: "10px 16px", borderTop: "1px solid #e5e7eb" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#6b7280", marginBottom: 4 }}>
+                    <span>Subtotal</span><span>₹{subtotal.toFixed(2)}</span>
                   </div>
-                ))}
-              </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#6b7280", marginBottom: 6 }}>
+                    <span>GST (5%)</span><span>₹{gst.toFixed(2)}</span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 16, fontWeight: 800, marginBottom: 12 }}>
+                    <span>Total</span><span style={{ color: "#f97316" }}>₹{grandTotal.toFixed(2)}</span>
+                  </div>
 
-              {/* Bill Summary */}
-              <div className="border-t mt-4 pt-4 space-y-2">
+                  {/* Notes — table service only */}
+                  {settings.posMode === "TABLE_SERVICE" && (
+                    <textarea
+                      placeholder="Notes / special instructions..."
+                      value={orderNotes}
+                      onChange={e => setOrderNotes(e.target.value)}
+                      rows={2}
+                      style={{ width: "100%", padding: "6px 10px", border: "1.5px solid #e5e7eb", borderRadius: 8, fontSize: 12, resize: "none", marginBottom: 8, fontFamily: "system-ui", color: "#111", background: "white" }}
+                    />
+                  )}
 
-                <div className="flex justify-between">
-                  <span>Subtotal</span>
-                  <span>₹{subtotal.toFixed(2)}</span>
+                  {/* Payment method */}
+                  <select
+                    value={paymentMethod}
+                    onChange={e => setPaymentMethod(e.target.value as "CASH" | "CARD" | "UPI")}
+                    style={{ width: "100%", padding: "8px 10px", border: "1.5px solid #e5e7eb", borderRadius: 8, fontSize: 13, marginBottom: 10, background: "white", color: "#111" }}
+                  >
+                    <option value="CASH">💵 Cash</option>
+                    <option value="CARD">💳 Card</option>
+                    <option value="UPI">📱 UPI</option>
+                  </select>
+
+                  <button
+                    onClick={() => placeOrder()}
+                    disabled={
+                      isPlacingOrder ||
+                      cart.length === 0 ||
+                      (settings.posMode === "TABLE_SERVICE" && !selectedTable)
+                    }
+                    style={{
+                      width: "100%", padding: "12px", borderRadius: 10, border: "none",
+                      background: (isPlacingOrder || cart.length === 0 || (settings.posMode === "TABLE_SERVICE" && !selectedTable)) ? "#e5e7eb" : "#111",
+                      color: (isPlacingOrder || cart.length === 0 || (settings.posMode === "TABLE_SERVICE" && !selectedTable)) ? "#9ca3af" : "white",
+                      fontSize: 14, fontWeight: 700, cursor: (isPlacingOrder || cart.length === 0 || (settings.posMode === "TABLE_SERVICE" && !selectedTable)) ? "not-allowed" : "pointer"
+                    }}
+                  >
+                    {isPlacingOrder ? "Placing order..." : settings.posMode === "TABLE_SERVICE" && !selectedTable ? "Select a table first" : "Place order"}
+                  </button>
                 </div>
-
-                <div className="flex justify-between">
-                  <span>GST (5%)</span>
-                  <span>₹{gst.toFixed(2)}</span>
-                </div>
-
-                <div className="flex justify-between font-bold text-lg">
-                  <span>Total</span>
-                  <span>₹{grandTotal.toFixed(2)}</span>
-                </div>
               </div>
-
-              {/* Payment */}
-              <div className="mt-4">
-                <label className="font-bold">Payment Method</label>
-
-                <select
-                  value={paymentMethod}
-                  onChange={(e) =>
-                    setPaymentMethod(e.target.value as "CASH" | "CARD" | "UPI")
-                  }
-                  className="block mt-2 p-2 border rounded w-full"
-                >
-                  <option value="CASH">Cash</option>
-                  <option value="CARD">Card</option>
-                  <option value="UPI">UPI</option>
-                </select>
-              </div>
-
-              <button
-                onClick={() => placeOrder()}
-                disabled={isPlacingOrder || cart.length === 0}
-                className="w-full mt-4 bg-black text-white py-3 rounded-lg font-semibold disabled:bg-gray-400"
-              >
-                {isPlacingOrder ? "Placing Order..." : "Place Order"}
-              </button>
             </div>
           </div>
         )}

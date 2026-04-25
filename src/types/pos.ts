@@ -100,6 +100,7 @@ export type POSSettings = {
   soundAlert: boolean
   autoSortOrders: boolean
   customerDisplayEnabled: boolean
+  posMode: "SELF_SERVICE" | "TABLE_SERVICE"
   printers: {
     id: string
     name: string
