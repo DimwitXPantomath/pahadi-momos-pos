@@ -19,6 +19,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Recipes",         value: "recipes",     icon: "📖",  roles: ["owner","manager"] },
   { label: "Procurement",     value: "procurement", icon: "🛒",  roles: ["owner","manager"] },
   { label: "Analytics",       value: "analytics",   icon: "📊",  roles: ["owner"] },
+  { label: "Loyalty Points",  value: "loyalty",     icon: "⭐",  roles: ["owner", "manager"] },
   { label: "Reports",         value: "reports",     icon: "📤",  roles: ["owner"] },
   { label: "Settings",        value: "settings",    icon: "⚙️",  roles: ["owner"] },
 ]
@@ -35,7 +36,7 @@ export default function Layout({ view, setView, todayOrderCount }: Props) {
   const navigate = useNavigate()
 
   const visibleItems = NAV_ITEMS.filter(item =>
-    profile?.role ? item.roles.includes(profile.role) : false
+    profile?.role ? item.roles.includes(profile.role) : true
   )
 
   const handleNav = (value: string) => {
