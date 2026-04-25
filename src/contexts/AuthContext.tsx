@@ -29,56 +29,79 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
-  const fetchProfile = async (userId: string) => {
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("id", userId)
-      .single()
+  const fetchProfile = async (userId: string): Promise<Profile | null> => {
+    try {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", userId)
+        .single()
 
-    if (error) {
-      console.error("Profile fetch error:", error)
+      if (error) {
+        console.warn("Profile fetch warning:", error.message)
+        // Profile doesn't exist yet — create a basic one
+        if (error.code === "PGRST116") {
+          const { data: newProfile } = await supabase
+            .from("profiles")
+            .insert({ id: userId, role: "staff", name: "User" })
+            .select()
+            .single()
+          return newProfile as Profile
+        }
+        return null
+      }
+
+      return data as Profile
+    } catch (err) {
+      console.error("Profile fetch error:", err)
       return null
     }
-
-    return data as Profile
   }
 
   useEffect(() => {
-    // Safety timeout — never stay stuck loading forever
+    // Hard timeout — never stay loading more than 5 seconds
     const timeout = setTimeout(() => {
+      console.warn("Auth timeout — forcing load complete")
       setIsLoading(false)
-    }, 3000)
+    }, 5000)
 
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      clearTimeout(timeout)
-      setUser(session?.user ?? null)
-
-      if (session?.user) {
-        const profile = await fetchProfile(session.user.id)
-        setProfile(profile)
-      }
-
-      setIsLoading(false)
-    })
-
-    // Listen for login/logout changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        setUser(session?.user ?? null)
+    const init = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
 
         if (session?.user) {
-          const profile = await fetchProfile(session.user.id)
-          setProfile(profile)
+          setUser(session.user)
+          const prof = await fetchProfile(session.user.id)
+          setProfile(prof)
+        }
+      } catch (err) {
+        console.error("Auth init error:", err)
+      } finally {
+        clearTimeout(timeout)
+        setIsLoading(false)
+      }
+    }
+
+    init()
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (session?.user) {
+          setUser(session.user)
+          const prof = await fetchProfile(session.user.id)
+          setProfile(prof)
         } else {
+          setUser(null)
           setProfile(null)
         }
-
         setIsLoading(false)
       }
     )
 
-    return () => subscription.unsubscribe()
+    return () => {
+      subscription.unsubscribe()
+      clearTimeout(timeout)
+    }
   }, [])
 
   const signOut = async () => {
@@ -94,7 +117,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   )
 }
 
-// Easy hook to use anywhere
 export function useAuth() {
   return useContext(AuthContext)
 }
