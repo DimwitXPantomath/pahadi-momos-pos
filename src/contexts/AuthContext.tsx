@@ -63,7 +63,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const timeout = setTimeout(() => {
       console.warn("Auth timeout — forcing load complete")
       setIsLoading(false)
-    }, 5000)
+    }, 10000)
 
     const init = async () => {
       try {
