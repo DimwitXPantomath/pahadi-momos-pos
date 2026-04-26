@@ -232,11 +232,14 @@ export default function Index() {
   };
 
   const addCategory = async () => {
-
-    if (!newCategoryName) return
+    const trimmed = newCategoryName.trim()
+    if (!trimmed) {
+      alert("Please enter a category name")
+      return
+    }
 
     const exists = categories.find(
-      c => c.name.toLowerCase() === newCategoryName.toLowerCase()
+      c => c.name.toLowerCase() === trimmed.toLowerCase()
     )
 
     if (exists) {
@@ -244,23 +247,34 @@ export default function Index() {
       return
     }
 
+    // Try insert
     const { data, error } = await supabase
       .from("categories")
-      .insert({ name: newCategoryName })
-      .select()
+      .insert([{ name: trimmed }])
+      .select("id, name")
       .single()
 
     if (error) {
       console.error("Category insert error:", error)
-      alert("Could not add category: " + error.message)
+      // Show detailed error so we know what's wrong
+      alert(`Could not add category.
+
+Error: ${error.message}
+Code: ${error.code}
+
+Make sure you are logged in and RLS policies are correct.`)
       return
     }
 
     if (data) {
       setCategories(prev => [...prev, data])
       setNewCategoryName("")
+    } else {
+      // data is null but no error - fetch fresh
+      const { data: fresh } = await supabase.from("categories").select("id, name")
+      if (fresh) setCategories(fresh)
+      setNewCategoryName("")
     }
-
   }
 
   const deleteCategory = async (id: string) => {
