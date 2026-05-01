@@ -1,12 +1,26 @@
-import { useState } from "react";
-import { Coffee, Leaf, Cake, UtensilsCrossed, GlassWater } from "lucide-react";
-import { cn } from "../../lib/utils";
-import { MenuItem } from "@/types/pos";
+import { Coffee, Leaf, Cake, UtensilsCrossed, GlassWater } from "lucide-react"
+import { cn } from "../../lib/utils"
+import type { MenuItem, OrderItem } from "@/types/pos"
 
-type MenuGridProps = {
-  menu: MenuItem[];
-  onAddToCart: (item: MenuItem) => void;
-};
+type Props = {
+  menuItems: MenuItem[]
+  categories: { id: string; name: string }[]
+  mostOrdered: MenuItem[]
+  cart: OrderItem[]
+
+  activeCategory: string
+  setActiveCategory: (v: string) => void
+
+  searchQuery: string
+  setSearchQuery: (v: string) => void
+
+  vegFilter: "all" | "veg" | "nonveg"
+  setVegFilter: (v: "all" | "veg" | "nonveg") => void
+
+  addToCart: (item: MenuItem, size?: { label: string; price: number }) => void
+  increaseQty: (id: string) => void
+  decreaseQty: (id: string) => void
+}
 
 const categoryIcons: Record<string, React.ReactNode> = {
   Coffee: <Coffee className="w-4 h-4" />,
@@ -14,69 +28,193 @@ const categoryIcons: Record<string, React.ReactNode> = {
   Pastries: <Cake className="w-4 h-4" />,
   Food: <UtensilsCrossed className="w-4 h-4" />,
   Beverages: <GlassWater className="w-4 h-4" />,
-};
+}
 
-const MenuGrid = ({ menu, onAddToCart }: MenuGridProps) => {
-  const [activeCategory, setActiveCategory] = useState("All");
+export default function MenuGrid({
+  menuItems,
+  categories,
+  mostOrdered,
+  cart,
+  activeCategory,
+  setActiveCategory,
+  searchQuery,
+  setSearchQuery,
+  vegFilter,
+  setVegFilter,
+  addToCart,
+  increaseQty,
+  decreaseQty,
+}: Props) {
 
-  const categories = [
-    "All",
-    ...Array.from(new Set(menu.map(item => item.category_id))),
-  ];
-
-  const filteredMenu =
-    activeCategory === "All"
-      ? menu
-      : menu.filter(item => item.category_id === activeCategory);
+  // 🔍 FILTER LOGIC (from v2)
+  const filtered = menuItems.filter(item => {
+    if (activeCategory !== "all" && item.category_id !== activeCategory) return false
+    if (!item.available) return false
+    if (vegFilter === "veg" && !item.is_veg) return false
+    if (vegFilter === "nonveg" && item.is_veg) return false
+    if (searchQuery && !item.name.toLowerCase().includes(searchQuery.toLowerCase())) return false
+    return true
+  })
 
   return (
     <div className="flex flex-col h-full">
-      {/* Category Tabs */}
-      <div className="flex gap-2 mb-4 overflow-x-auto pb-2 scrollbar-hide">
-        {categories.map(category => (
+
+      {/* 🔍 Search + Veg Filter */}
+      <div className="flex gap-2 mb-3">
+        <input
+          placeholder="Search menu..."
+          value={searchQuery}
+          onChange={e => setSearchQuery(e.target.value)}
+          className="flex-1 px-3 py-2 border rounded-lg text-sm"
+        />
+
+        {(["all", "veg", "nonveg"] as const).map(f => (
           <button
-            key={category}
-            onClick={() => setActiveCategory(category)}
+            key={f}
+            onClick={() => setVegFilter(f)}
             className={cn(
-              "flex items-center gap-2 px-5 py-3 rounded-xl font-semibold text-sm whitespace-nowrap transition-all",
-              activeCategory === category
-                ? "bg-indigo-600 text-white shadow-md"
-                : "bg-white text-gray-700 border hover:bg-gray-100"
+              "px-3 py-2 rounded-lg text-xs font-semibold border",
+              vegFilter === f
+                ? f === "veg"
+                  ? "bg-green-600 text-white"
+                  : f === "nonveg"
+                  ? "bg-red-600 text-white"
+                  : "bg-black text-white"
+                : "bg-white"
             )}
           >
-            {category !== "All" && categoryIcons[category]}
-            {category}
+            {f === "all" ? "All" : f === "veg" ? "🟢 Veg" : "🔴 Non-veg"}
           </button>
         ))}
       </div>
 
-      {/* Menu Items */}
-      <div className="grid gap-3">
-        {filteredMenu.map(item => (
+      {/* 📂 Category Tabs */}
+      <div className="flex gap-2 mb-3 overflow-x-auto">
+        <button
+          onClick={() => setActiveCategory("all")}
+          className={cn(
+            "px-4 py-2 rounded-xl text-sm font-semibold",
+            activeCategory === "all" ? "bg-indigo-600 text-white" : "bg-white border"
+          )}
+        >
+          All
+        </button>
+
+        {categories.map(cat => (
           <button
-            key={item.id}
-            onClick={() => onAddToCart(item)}
-            className="w-full text-left bg-gray-50 hover:bg-gray-100 transition rounded-lg p-3 border border-gray-100"
+            key={cat.id}
+            onClick={() => setActiveCategory(cat.id)}
+            className={cn(
+              "flex items-center gap-1 px-4 py-2 rounded-xl text-sm font-semibold whitespace-nowrap",
+              activeCategory === cat.id
+                ? "bg-indigo-600 text-white"
+                : "bg-white border"
+            )}
           >
-            <div className="font-medium text-gray-800">
-              {item.name}
-            </div>
-            <div className="text-sm text-gray-500 flex justify-between mt-1">
-              <span>{item.category_id}</span>
-              <span>₹{item.price}</span>
-            </div>
+            {categoryIcons[cat.name]}
+            {cat.name}
           </button>
         ))}
       </div>
 
-      {filteredMenu.length === 0 && (
-        <div className="flex flex-col items-center justify-center h-48 text-muted-foreground">
-          <Coffee className="w-12 h-12 mb-2 opacity-50" />
-          <p>No items in this category</p>
+      {/* ⭐ Most Ordered */}
+      {mostOrdered.length > 0 && (
+        <div className="mb-3">
+          <p className="text-xs font-bold text-gray-500 mb-1">⭐ Most Ordered</p>
+          <div className="flex gap-2 flex-wrap">
+            {mostOrdered.map(item => (
+              <button
+                key={item.id}
+                onClick={() => addToCart(item)}
+                className="px-3 py-1 bg-yellow-100 border border-yellow-400 rounded-full text-xs font-semibold"
+              >
+                {item.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 🧾 Menu Grid */}
+      <div className="grid grid-cols-3 gap-3 overflow-y-auto">
+
+        {filtered.map(item => {
+          const cartItem = cart.find(i => i.id === item.id)
+
+          return (
+            <div
+              key={item.id}
+              className="bg-white border rounded-xl p-3"
+            >
+              {/* Image */}
+              <div className="h-16 flex items-center justify-center bg-gray-100 rounded mb-2 text-xl">
+                {item.is_veg ? "🥗" : "🍖"}
+              </div>
+
+              {/* Name */}
+              <div className="flex items-center gap-1 mb-1">
+                <span className={cn(
+                  "w-2 h-2 rounded-full",
+                  item.is_veg ? "bg-green-500" : "bg-red-500"
+                )} />
+                <span className="text-sm font-semibold truncate">{item.name}</span>
+              </div>
+
+              {/* Price */}
+              <p className="text-orange-500 font-bold text-sm mb-2">
+                ₹{item.price}
+              </p>
+
+              {/* Sizes or Add */}
+              {item.sizes?.length ? (
+                <div className="flex flex-wrap gap-1">
+                  {item.sizes.map(size => {
+                    const sizeId = `${item.id}|${size.label}|base`
+                    const sizeCart = cart.find(i => i.id === sizeId)
+
+                    return sizeCart ? (
+                      <div key={size.label} className="flex items-center gap-1">
+                        <button onClick={() => decreaseQty(sizeCart.id)} className="px-2 border rounded">-</button>
+                        <span className="text-xs font-bold">{sizeCart.quantity}</span>
+                        <button onClick={() => addToCart(item, size)} className="px-2 bg-black text-white rounded">+</button>
+                      </div>
+                    ) : (
+                      <button
+                        key={size.label}
+                        onClick={() => addToCart(item, size)}
+                        className="px-2 py-1 text-xs bg-black text-white rounded"
+                      >
+                        {size.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              ) : cartItem ? (
+                <div className="flex items-center gap-2">
+                  <button onClick={() => decreaseQty(cartItem.id)} className="px-2 border rounded">-</button>
+                  <span className="text-sm font-bold">{cartItem.quantity}</span>
+                  <button onClick={() => increaseQty(cartItem.id)} className="px-2 bg-black text-white rounded">+</button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => addToCart(item)}
+                  className="w-full bg-black text-white py-1 rounded text-sm"
+                >
+                  Add
+                </button>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Empty */}
+      {filtered.length === 0 && (
+        <div className="flex flex-col items-center justify-center h-40 text-gray-400">
+          <Coffee className="w-10 h-10 mb-2 opacity-50" />
+          <p>No items found</p>
         </div>
       )}
     </div>
-  );
-};
-
-export default MenuGrid;
+  )
+}
