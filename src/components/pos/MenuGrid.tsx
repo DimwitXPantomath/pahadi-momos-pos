@@ -20,6 +20,7 @@ type Props = {
   addToCart: (item: MenuItem, size?: { label: string; price: number }) => void
   increaseQty: (id: string) => void
   decreaseQty: (id: string) => void
+  toggleAvailability?: (id: string, current: boolean) => void | Promise<void>
 }
 
 const categoryIcons: Record<string, React.ReactNode> = {
@@ -44,11 +45,12 @@ export default function MenuGrid({
   addToCart,
   increaseQty,
   decreaseQty,
+  toggleAvailability,
 }: Props) {
 
   // 🔍 FILTER LOGIC (from v2)
   const filtered = menuItems.filter(item => {
-    if (activeCategory !== "all" && item.category_id !== activeCategory) return false
+    if (activeCategory && activeCategory !== "all" && item.category_id !== activeCategory) return false
     if (!item.available) return false
     if (vegFilter === "veg" && !item.is_veg) return false
     if (vegFilter === "nonveg" && item.is_veg) return false
