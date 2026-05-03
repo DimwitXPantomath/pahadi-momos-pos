@@ -60,7 +60,7 @@ export default function Index() {
 
   const {
     menuItems, setMenuItems, categories, setCategories,
-    mostOrdered, filteredMenu,
+    
     newItemName, setNewItemName, newItemPrice, setNewItemPrice,
     newItemCategory, setNewItemCategory, newItemIsVeg, setNewItemIsVeg,
     newCategoryName, setNewCategoryName,
@@ -120,6 +120,7 @@ export default function Index() {
   const [selectedIngredientForRecipe, setSelectedIngredientForRecipe] = useState("")
   const [recipeQty, setRecipeQty] = useState("")
   const [suggestions, setSuggestions] = useState<string[]>([])
+  const [mostOrdered, setMostOrdered] = useState<MenuItem[]>([])
 
   // ── Analytics (computed) ───────────────────────────────────────
   const salesData = useMemo(() => {
@@ -248,9 +249,16 @@ export default function Index() {
   useEffect(() => { if (user) { fetchCategories(); fetchMenu() } }, [user])
 
   useEffect(() => {
-    const unsub = subscribeToOrders()
-    return () => { unsub?.() }
-  }, [subscribeToOrders])
+    if (!subscribeToOrders) return
+
+    const unsubscribe = subscribeToOrders()
+
+    return () => {
+      if (typeof unsubscribe === "function") {
+        unsubscribe()
+      }
+    }
+  }, [])
 
   useEffect(() => {
     const interval = setInterval(() => setTick((t: number) => t + 1), 1000)
@@ -276,6 +284,20 @@ export default function Index() {
     if (data) { setIngredients(prev => [...prev, data]); setNewIngredientName(""); setNewIngredientUnit("") }
   }
 
+  const addSubRecipe = () => {
+    if (!newSubRecipe.trim()) return
+
+    const newItem: SubRecipe = {
+      id: Date.now().toString(),
+      name: newSubRecipe,
+      yield_qty: 1,
+      unit: "unit"
+    }
+
+    setSubRecipes(prev => [...prev, newItem])
+    setNewSubRecipe("")
+  }
+
   const addSubRecipeItem = async () => {
     if (!selectedSubRecipe || !selectedIngredient || !quantity) return
     const qty = Number(quantity)
@@ -295,19 +317,6 @@ export default function Index() {
       .select()
       .single()
     if (data) setRecipes(prev => [...prev, data])
-  }
-
-  const addSubRecipe = async () => {
-    if (!newSubRecipe.trim()) return
-    const { data } = await supabase
-      .from("sub_recipes")
-      .insert({ name: newSubRecipe.trim() })
-      .select()
-      .single()
-    if (data) {
-      setSubRecipes(prev => [...prev, data])
-      setNewSubRecipe("")
-    }
   }
 
   const addRecipeItem = async () => {
@@ -346,7 +355,25 @@ export default function Index() {
     setSuggestions(result)
   }
 
+  const fetchMostOrderedItems = useCallback(async () => {
+    const { data } = await supabase.from("order_items").select("item_id, quantity").eq("outlet_id", OUTLET_ID)
+    if (!data) return
+    const counts: Record<string, number> = {}
+    data.forEach(row => { counts[row.item_id] = (counts[row.item_id] || 0) + row.quantity })
+    const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([id]) => menuItems.find(m => m.id === id)).filter(Boolean) as MenuItem[]
+    setMostOrdered(sorted)
+  }, [menuItems])
 
+  const filteredMenu = useMemo(() => {
+    return menuItems.filter(item => {
+      if (!item.available) return false
+      if (activeCategory !== "all" && item.category_id !== activeCategory) return false
+      if (vegFilter === "veg" && !item.is_veg) return false
+      if (vegFilter === "nonveg" && item.is_veg) return false
+      if (searchQuery && !item.name.toLowerCase().includes(searchQuery.toLowerCase())) return false
+      return true
+    })
+  }, [menuItems, activeCategory, vegFilter, searchQuery])
 
   // ── Render ─────────────────────────────────────────────────────
   const viewStyles: Record<string, React.CSSProperties> = {
