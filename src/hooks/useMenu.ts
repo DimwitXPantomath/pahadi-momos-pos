@@ -38,6 +38,7 @@ export const useMenu = () => {
 
   // ── Fetch categories ─────────────────────────────────────────────
   const fetchCategories = useCallback(async () => {
+    console.log("fetchCategories called")
     const { data, error } = await supabase
       .from("categories")
       .select("id, name")
@@ -48,6 +49,7 @@ export const useMenu = () => {
       return
     }
 
+    console.log("Categories from DB:", data, "Error:", error)
     if (data) setCategories(data)
   }, [])
 
