@@ -85,6 +85,12 @@ export const useMenu = () => {
       return
     }
 
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) {
+      alert("Session expired. Please refresh the page and log in again.")
+      return
+    }
+
     const { data, error } = await supabase
       .from("menu_items")
       .insert({
@@ -104,7 +110,8 @@ export const useMenu = () => {
       setNewItemCategory("")
     } else {
       console.error("Add item error:", error)
-      alert("Could not add item: " + error?.message)
+      alert(`Could not add item: ${error?.message}
+Code: ${error?.code}`)
     }
   }
 
@@ -122,13 +129,28 @@ export const useMenu = () => {
       return
     }
 
+    // Verify session is active before insert
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) {
+      alert("Session expired. Please refresh the page and log in again.")
+      return
+    }
+
+    console.log("Adding category:", trimmed, "Session:", session.user.email)
+
     const { data, error } = await supabase
       .from("categories")
       .insert({ name: trimmed })
       .select("id, name")
 
+    console.log("Category insert result:", { data, error })
+
     if (error) {
-      alert("Error adding category: " + error.message)
+      console.error("Category insert error full:", error)
+      alert(`Could not add category.
+Error: ${error.message}
+Code: ${error.code}
+Hint: ${error.hint || "none"}`)
       return
     }
 
@@ -136,6 +158,8 @@ export const useMenu = () => {
       setCategories(prev => [...prev, data[0]])
       setNewCategoryName("")
     } else {
+      // No error but no data returned - fetch fresh from DB
+      console.warn("Insert returned no data, fetching fresh...")
       await fetchCategories()
       setNewCategoryName("")
     }
