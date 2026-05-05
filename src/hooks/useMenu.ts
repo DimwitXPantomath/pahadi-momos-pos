@@ -1,8 +1,10 @@
 import { useState, useCallback } from "react"
 import { supabase } from "@/lib/supabase"
 import type { MenuItem } from "@/types/pos"
+import { useConfirm } from "@/components/ConfirmDialog"
 
 export const useMenu = () => {
+  const { confirm, confirmState, handleConfirm, handleCancel } = useConfirm()
   const [menuItems, setMenuItems] = useState<MenuItem[]>([])
   const [categories, setCategories] = useState<{ id: string; name: string }[]>([])
   const [mostOrdered, setMostOrdered] = useState<MenuItem[]>([])
@@ -38,7 +40,6 @@ export const useMenu = () => {
 
   // ── Fetch categories ─────────────────────────────────────────────
   const fetchCategories = useCallback(async () => {
-    console.log("fetchCategories called")
     const { data, error } = await supabase
       .from("categories")
       .select("id, name")
@@ -49,7 +50,6 @@ export const useMenu = () => {
       return
     }
 
-    console.log("Categories from DB:", data, "Error:", error)
     if (data) setCategories(data)
   }, [])
 
@@ -87,12 +87,6 @@ export const useMenu = () => {
       return
     }
 
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session) {
-      alert("Session expired. Please refresh the page and log in again.")
-      return
-    }
-
     const { data, error } = await supabase
       .from("menu_items")
       .insert({
@@ -112,8 +106,7 @@ export const useMenu = () => {
       setNewItemCategory("")
     } else {
       console.error("Add item error:", error)
-      alert(`Could not add item: ${error?.message}
-Code: ${error?.code}`)
+      alert("Could not add item: " + error?.message)
     }
   }
 
@@ -131,28 +124,13 @@ Code: ${error?.code}`)
       return
     }
 
-    // Verify session is active before insert
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session) {
-      alert("Session expired. Please refresh the page and log in again.")
-      return
-    }
-
-    console.log("Adding category:", trimmed, "Session:", session.user.email)
-
     const { data, error } = await supabase
       .from("categories")
       .insert({ name: trimmed })
       .select("id, name")
 
-    console.log("Category insert result:", { data, error })
-
     if (error) {
-      console.error("Category insert error full:", error)
-      alert(`Could not add category.
-Error: ${error.message}
-Code: ${error.code}
-Hint: ${error.hint || "none"}`)
+      alert("Error adding category: " + error.message)
       return
     }
 
@@ -160,8 +138,6 @@ Hint: ${error.hint || "none"}`)
       setCategories(prev => [...prev, data[0]])
       setNewCategoryName("")
     } else {
-      // No error but no data returned - fetch fresh from DB
-      console.warn("Insert returned no data, fetching fresh...")
       await fetchCategories()
       setNewCategoryName("")
     }
@@ -169,30 +145,59 @@ Hint: ${error.hint || "none"}`)
 
   // ── Delete category ──────────────────────────────────────────────
   const deleteCategory = async (id: string) => {
-    if (!confirm("Delete this category?")) return
+    const cat = categories.find(c => c.id === id)
+    const itemCount = menuItems.filter(i => i.category_id === id).length
+
+    const ok = await confirm({
+      title: "Delete Category",
+      message: itemCount > 0
+        ? `"${cat?.name}" has ${itemCount} item${itemCount > 1 ? "s" : ""}. Deleting it may affect those items. Are you sure?`
+        : `Are you sure you want to delete "${cat?.name}"?`,
+      confirmLabel: "Delete",
+      cancelLabel: "Keep",
+      danger: true,
+    })
+
+    if (!ok) return
 
     const { error } = await supabase
       .from("categories")
       .delete()
       .eq("id", id)
 
-    if (!error) {
-      setCategories(prev => prev.filter(c => c.id !== id))
+    if (error) {
+      alert("Could not delete category: " + error.message)
+      return
     }
+
+    setCategories(prev => prev.filter(c => c.id !== id))
   }
 
   // ── Delete menu item ─────────────────────────────────────────────
   const deleteMenuItem = async (id: string) => {
-    if (!confirm("Delete this item?")) return
+    const item = menuItems.find(m => m.id === id)
+
+    const ok = await confirm({
+      title: "Delete Menu Item",
+      message: `Are you sure you want to delete "${item?.name}"? This cannot be undone.`,
+      confirmLabel: "Delete",
+      cancelLabel: "Keep",
+      danger: true,
+    })
+
+    if (!ok) return
 
     const { error } = await supabase
       .from("menu_items")
       .delete()
       .eq("id", id)
 
-    if (!error) {
-      setMenuItems(prev => prev.filter(item => item.id !== id))
+    if (error) {
+      alert("Could not delete item: " + error.message)
+      return
     }
+
+    setMenuItems(prev => prev.filter(m => m.id !== id))
   }
 
   // ── Toggle availability ──────────────────────────────────────────
@@ -222,6 +227,11 @@ Hint: ${error.hint || "none"}`)
   })
 
   return {
+    // Confirm dialog
+    confirmState,
+    handleConfirm,
+    handleCancel,
+
     // Data
     menuItems,
     setMenuItems,

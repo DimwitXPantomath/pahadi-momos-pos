@@ -11,6 +11,7 @@ import CartPanel from "@/components/pos/CartPanel"
 import TableSelector from "@/components/pos/TableSelector"
 import OrderBoard from "@/components/pos/OrderBoard"
 import { useAuth } from "@/contexts/AuthContext"
+import ConfirmDialog from "@/components/ConfirmDialog"
 import { useCart } from "@/hooks/useCart"
 import { useOrders } from "@/hooks/useOrders"
 import { useMenu } from "@/hooks/useMenu"
@@ -60,7 +61,7 @@ export default function Index() {
 
   const {
     menuItems, setMenuItems, categories, setCategories,
-    
+    confirmState, handleConfirm, handleCancel,
     newItemName, setNewItemName, newItemPrice, setNewItemPrice,
     newItemCategory, setNewItemCategory, newItemIsVeg, setNewItemIsVeg,
     newCategoryName, setNewCategoryName,
@@ -126,18 +127,21 @@ export default function Index() {
   const salesData = useMemo(() => {
     const itemSales: Record<string, number> = {}
     orders.forEach(order => {
-      if (!order.items) return
-      order.items.forEach((item: OrderItem) => {
+      order.items?.forEach((item: OrderItem) => {
         itemSales[item.name] = (itemSales[item.name] || 0) + item.quantity
       })
     })
-    return Object.entries(itemSales).map(([name, qty]) => ({ name, sales: qty }))
+    return Object.entries(itemSales)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 20)
+      .map(([name, qty]) => ({ name, sales: qty }))
   }, [orders])
 
   const paymentData = useMemo(() => {
     const totals = { CASH: 0, CARD: 0, UPI: 0 }
     orders.forEach(order => {
-      totals[order.payment_method as keyof typeof totals] += order.total
+      const method = order.payment_method as keyof typeof totals
+      if (method && method in totals) totals[method] += (order.total ?? 0)
     })
     return [
       { name: "Cash", value: totals.CASH },
@@ -218,20 +222,18 @@ export default function Index() {
       printKOT({ order: data, items, station })
     })
 
-    // Deduct stock
-    for (const item of cart) {
+    // Deduct stock — run all items in parallel
+    await Promise.all(cart.map(async item => {
       const { data: recipe } = await supabase
         .from("recipes")
         .select("*")
         .eq("menu_item_id", item.baseId || item.id)
         .single()
-      if (!recipe) continue
+      if (!recipe) return
       const ingredientsList = await expandRecipe(recipe.id)
       const finalList = ingredientsList.map(i => ({ ...i, quantity: i.quantity * item.quantity }))
-      for (const ing of finalList) {
-        await updateStock(ing.ingredient_id, ing.quantity)
-      }
-    }
+      await Promise.all(finalList.map(ing => updateStock(ing.ingredient_id, ing.quantity)))
+    }))
 
     printReceipt(data)
     setQrOrderId(data.id)
@@ -334,14 +336,14 @@ export default function Index() {
     if (!data) return
     const low = data.filter(i => i.current_stock < i.min_stock)
     if (!low.length) { alert("No items needed"); return }
-    for (const ing of low) {
+    await Promise.all(low.map(async ing => {
       const qty = (ing.min_stock - ing.current_stock) * 2
       const { data: vendor } = await supabase.from("ingredient_prices").select("*").eq("ingredient_id", ing.id).order("price_per_unit", { ascending: true }).limit(1).single()
-      if (!vendor) continue
+      if (!vendor) return
       const { data: po } = await supabase.from("purchase_orders").insert({ vendor_name: vendor.vendor_name, status: "PENDING" }).select().single()
-      if (!po) continue
+      if (!po) return
       await supabase.from("purchase_order_items").insert([{ purchase_order_id: po.id, ingredient_id: ing.id, quantity: qty, price: vendor.price_per_unit }])
-    }
+    }))
     alert("Purchase Orders Generated")
   }
 
@@ -1200,6 +1202,18 @@ export default function Index() {
           preload="auto"
         />
       </main>
+
+      {/* Global in-app confirm dialog */}
+      <ConfirmDialog
+        isOpen={confirmState.isOpen}
+        title={confirmState.title}
+        message={confirmState.message}
+        confirmLabel={confirmState.confirmLabel}
+        cancelLabel={confirmState.cancelLabel}
+        danger={confirmState.danger}
+        onConfirm={handleConfirm}
+        onCancel={handleCancel}
+      />
     </>  
   );
 }
