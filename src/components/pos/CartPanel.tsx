@@ -127,7 +127,7 @@ export default function CartPanel({
         <div style={{ marginBottom: 10 }}>
           <div style={row}>
             <span style={{ fontSize: 12, color: "#6b7280" }}>Subtotal</span>
-            <span style={{ fontSize: 12, color: "#6b7280" }}>₹{subtotal.toFixed(2)}</span>
+            <span style={{ fontSize: 12, color: "#6b7280" }}>₹{(subtotal || 0).toFixed(2)}</span>
           </div>
           <div style={row}>
             <span style={{ fontSize: 12, color: "#6b7280" }}>GST (5%)</span>

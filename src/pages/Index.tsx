@@ -19,10 +19,6 @@ import { usePOSConfig } from "@/hooks/usePOSConfig"
 import { printReceipt } from "@/utils/printReceipt"
 import { printKOT } from "@/utils/printKOT"
 import { expandRecipe, updateStock } from "@/services/inventoryService"
-import IngredientsView from "@/components/ingredients/IngredientsView"
-import InventoryView from "@/components/inventory/InventoryView"
-import SubRecipesView from "@/components/subrecipes/SubRecipesView"
-import RecipesView from "@/components/recipes/RecipesView"
 
 const OUTLET_ID = "demo-outlet"
 
@@ -39,7 +35,6 @@ type View =
   | "subrecipes"
   | "reports"
   | "loyalty"
-  | "inventory"
 
 type PaymentMethod = "CASH" | "CARD" | "UPI"
 
@@ -132,21 +127,18 @@ export default function Index() {
   const salesData = useMemo(() => {
     const itemSales: Record<string, number> = {}
     orders.forEach(order => {
-      order.items?.forEach((item: OrderItem) => {
+      if (!order.items) return
+      order.items.forEach((item: OrderItem) => {
         itemSales[item.name] = (itemSales[item.name] || 0) + item.quantity
       })
     })
-    return Object.entries(itemSales)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 20)
-      .map(([name, qty]) => ({ name, sales: qty }))
+    return Object.entries(itemSales).map(([name, qty]) => ({ name, sales: qty }))
   }, [orders])
 
   const paymentData = useMemo(() => {
     const totals = { CASH: 0, CARD: 0, UPI: 0 }
     orders.forEach(order => {
-      const method = order.payment_method as keyof typeof totals
-      if (method && method in totals) totals[method] += (order.total ?? 0)
+      totals[order.payment_method as keyof typeof totals] += order.total
     })
     return [
       { name: "Cash", value: totals.CASH },
@@ -185,7 +177,6 @@ export default function Index() {
 
     const payload = {
       outlet_id: OUTLET_ID,
-      token_no: orders.length + 101,
       items: cart,
       subtotal,
       gst,
@@ -200,14 +191,24 @@ export default function Index() {
       ...(orderNotes ? { notes: orderNotes } : {}),
     }
 
-    const { data, error } = await supabase
-      .from("orders")
-      .insert(payload)
-      .select()
-      .single()
+    let data: any = null
+    try {
+      const { data: orderData, error } = await supabase
+        .from("orders")
+        .insert(payload)
+        .select()
+        .single()
 
-    if (error) {
-      alert(error.message)
+      if (error) {
+        console.error("Order insert error:", error)
+        alert(`Order failed: ${error.message}`)
+        setIsPlacingOrder(false)
+        return
+      }
+      data = orderData
+    } catch (err: any) {
+      console.error("Order insert exception:", err)
+      alert("Order failed: " + err.message)
       setIsPlacingOrder(false)
       return
     }
@@ -227,18 +228,23 @@ export default function Index() {
       printKOT({ order: data, items, station })
     })
 
-    // Deduct stock — run all items in parallel
-    await Promise.all(cart.map(async item => {
-      const { data: recipe } = await supabase
-        .from("recipes")
-        .select("*")
-        .eq("menu_item_id", item.baseId || item.id)
-        .single()
-      if (!recipe) return
-      const ingredientsList = await expandRecipe(recipe.id)
-      const finalList = ingredientsList.map(i => ({ ...i, quantity: i.quantity * item.quantity }))
-      await Promise.all(finalList.map(ing => updateStock(ing.ingredient_id, ing.quantity)))
-    }))
+    // Deduct stock — parallel, non-blocking (don't fail order if recipe missing)
+    try {
+      await Promise.all(cart.map(async item => {
+        const { data: recipe } = await supabase
+          .from("recipes")
+          .select("*")
+          .eq("menu_item_id", item.baseId || item.id)
+          .single()
+        if (!recipe) return
+        const ingredientsList = await expandRecipe(recipe.id)
+        await Promise.all(
+          ingredientsList.map(i => updateStock(i.ingredient_id, i.quantity * item.quantity))
+        )
+      }))
+    } catch (stockErr) {
+      console.warn("Stock deduction error (non-fatal):", stockErr)
+    }
 
     printReceipt(data)
     setQrOrderId(data.id)
@@ -341,14 +347,14 @@ export default function Index() {
     if (!data) return
     const low = data.filter(i => i.current_stock < i.min_stock)
     if (!low.length) { alert("No items needed"); return }
-    await Promise.all(low.map(async ing => {
+    for (const ing of low) {
       const qty = (ing.min_stock - ing.current_stock) * 2
       const { data: vendor } = await supabase.from("ingredient_prices").select("*").eq("ingredient_id", ing.id).order("price_per_unit", { ascending: true }).limit(1).single()
-      if (!vendor) return
+      if (!vendor) continue
       const { data: po } = await supabase.from("purchase_orders").insert({ vendor_name: vendor.vendor_name, status: "PENDING" }).select().single()
-      if (!po) return
+      if (!po) continue
       await supabase.from("purchase_order_items").insert([{ purchase_order_id: po.id, ingredient_id: ing.id, quantity: qty, price: vendor.price_per_unit }])
-    }))
+    }
     alert("Purchase Orders Generated")
   }
 
@@ -373,8 +379,8 @@ export default function Index() {
 
   const filteredMenu = useMemo(() => {
     return menuItems.filter(item => {
-      if (!(item.available ?? true)) return false
-      if (activeCategory && activeCategory !== "all" && item.category_id !== activeCategory) return false
+      if (!item.available) return false
+      if (activeCategory !== "all" && item.category_id !== activeCategory) return false
       if (vegFilter === "veg" && !item.is_veg) return false
       if (vegFilter === "nonveg" && item.is_veg) return false
       if (searchQuery && !item.name.toLowerCase().includes(searchQuery.toLowerCase())) return false
@@ -418,7 +424,7 @@ export default function Index() {
 
       {/* ── MENU VIEW ──────────────────────────────────────────── */}
       {view === "menu" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 0, height: "calc(100vh - 100px)" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 0, height: "calc(100vh - 80px)" }}>
 
           {features.tables && (
             <TableSelector
@@ -435,7 +441,7 @@ export default function Index() {
             </div>
           )}
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 16, flex: 1, minHeight: 0, overflow: "hidden" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: 16, flex: 1, minHeight: 0 }}>
             <MenuGrid
               menuItems={menuItems}
               categories={categories}
@@ -613,8 +619,6 @@ export default function Index() {
         </div>
       )}
 
-      {view === "inventory" && <InventoryView />}
-
       {view === "settings" && (
         <Settings
           settings={settings}
@@ -733,7 +737,31 @@ export default function Index() {
 
       )}
 
-      {view === "ingredients" && <IngredientsView />}
+      {view === "ingredients" && (
+        <div>
+          <h2>Ingredients</h2>
+
+          <input
+            placeholder="Ingredient name"
+            value={newIngredientName}
+            onChange={(e) => setNewIngredientName(e.target.value)}
+          />
+
+          <input
+            placeholder="Unit (g/ml/pcs)"
+            value={newIngredientUnit}
+            onChange={(e) => setNewIngredientUnit(e.target.value)}
+          />
+
+          <button onClick={addIngredient}>Add</button>
+
+          {ingredients.map(i => (
+            <div key={i.id}>
+              {i.name} ({i.unit}) — Stock: {i.current_stock}
+            </div>
+          ))}
+        </div>
+      )}
 
       {view === "procurement" && (
         <div>
@@ -783,9 +811,230 @@ export default function Index() {
         </div>
       )}
 
-      {view === "subrecipes" && <SubRecipesView />}
+      {view === "subrecipes" && (
+        <div>
 
-      {view === "recipes" && <RecipesView />}
+          {/* CREATE SUB RECIPE */}
+          <h2>Sub Recipes</h2>
+
+          <div className="flex gap-2 mb-4">
+            <input
+              placeholder="Sub recipe name"
+              value={newSubRecipe}
+              onChange={(e) => setNewSubRecipe(e.target.value)}
+            />
+
+            <button onClick={addSubRecipe}>Add</button>
+          </div>
+
+          <div className="grid grid-cols-2 gap-6">
+
+            {/* LEFT: SUB RECIPE LIST */}
+            <div>
+              {subRecipes.map(sr => (
+                <div
+                  key={sr.id}
+                  onClick={() => setSelectedSubRecipe(sr)}
+                  className={`p-2 cursor-pointer border mb-2 ${
+                    selectedSubRecipe?.id === sr.id
+                      ? "bg-black text-white"
+                      : ""
+                  }`}
+                >
+                  {sr.name}
+                </div>
+              ))}
+            </div>
+
+            {/* RIGHT: BUILDER */}
+            <div>
+
+              <h3>
+                {selectedSubRecipe
+                  ? selectedSubRecipe.name
+                  : "Select Sub Recipe"}
+              </h3>
+
+              {selectedSubRecipe && (
+                <>
+                  {/* ADD INGREDIENT */}
+                  <div className="flex gap-2 mb-4">
+
+                    <select
+                      value={selectedIngredient}
+                      onChange={(e) => setSelectedIngredient(e.target.value)}
+                    >
+                      <option value="">Ingredient</option>
+                      {ingredients.map(i => (
+                        <option key={i.id} value={i.id}>
+                          {i.name}
+                        </option>
+                      ))}
+                    </select>
+
+                    <input
+                      placeholder="Qty"
+                      value={quantity}
+                      onChange={(e) => setQuantity(e.target.value)}
+                    />
+
+                    <input
+                      placeholder="Yield %"
+                      value={yieldPercent}
+                      onChange={(e) => setYieldPercent(e.target.value)}
+                    />
+
+                    <button onClick={addSubRecipeItem}>
+                      Add
+                    </button>
+
+                  </div>
+
+                  {/* LIST */}
+                  {subRecipeItems.map(item => {
+                    const ing = ingredients.find(i => i.id === item.ingredient_id)
+
+                    const usableQty =
+                      item.quantity * ((item.yield_percent || 100) / 100)
+
+                    return (
+                      <div key={item.id} className="border p-2 mb-2 rounded">
+
+                        <div className="font-semibold">{ing?.name}</div>
+
+                        <div className="text-sm">
+                          Input: {item.quantity}
+                        </div>
+
+                        <div className="text-sm">
+                          Yield: {item.yield_percent || 100}%
+                        </div>
+
+                        <div className="text-sm text-green-600">
+                          Usable: {usableQty.toFixed(2)}
+                        </div>
+
+                        <div className="text-sm text-red-500">
+                          Wastage: {item.wastage?.toFixed(2)}
+                        </div>
+
+                      </div>
+                    )
+                  })}
+
+                </>
+              )}
+
+            </div>
+          </div>
+        </div>
+      )}
+
+      {view === "recipes" && (
+        <div className="grid grid-cols-2 gap-6">
+
+          {/* LEFT: MENU ITEMS */}
+          <div>
+            <h3>Select Menu Item</h3>
+
+            {menuItems.map(item => (
+              <div
+                key={item.id}
+                onClick={() => setSelectedMenuItem(item.id)}
+                className="p-2 border mb-2 cursor-pointer"
+              >
+                {item.name}
+              </div>
+            ))}
+
+            <button onClick={addRecipe}>Create Recipe</button>
+
+            <h3 className="mt-4">Recipes</h3>
+
+            {recipes.map(r => (
+              <div
+                key={r.id}
+                onClick={() => setSelectedRecipe(r)}
+                className="p-2 border mb-2 cursor-pointer"
+              >
+                {r.name}
+              </div>
+            ))}
+          </div>
+
+          {/* RIGHT: BUILDER */}
+          <div>
+
+            <h3>
+              {selectedRecipe ? "Build Recipe" : "Select Recipe"}
+            </h3>
+
+            {selectedRecipe && (
+              <>
+                <div className="flex gap-2 mb-4">
+
+                  {/* INGREDIENT */}
+                  <select
+                    value={selectedIngredientForRecipe}
+                    onChange={(e) => {
+                      setSelectedIngredientForRecipe(e.target.value)
+                      setSelectedSubRecipeForRecipe("")
+                    }}
+                  >
+                    <option value="">Ingredient</option>
+                    {ingredients.map(i => (
+                      <option key={i.id} value={i.id}>
+                        {i.name}
+                      </option>
+                    ))}
+                  </select>
+
+                  {/* SUB RECIPE */}
+                  <select
+                    value={selectedSubRecipeForRecipe}
+                    onChange={(e) => {
+                      setSelectedSubRecipeForRecipe(e.target.value)
+                      setSelectedIngredientForRecipe("")
+                    }}
+                  >
+                    <option value="">Sub Recipe</option>
+                    {subRecipes.map(sr => (
+                      <option key={sr.id} value={sr.id}>
+                        {sr.name}
+                      </option>
+                    ))}
+                  </select>
+
+                  <input
+                    placeholder="Qty"
+                    value={recipeQty}
+                    onChange={(e) => setRecipeQty(e.target.value)}
+                  />
+
+                  <button onClick={addRecipeItem}>
+                    Add
+                  </button>
+
+                </div>
+
+                {/* LIST */}
+                {recipeItems.map(item => {
+                  const ing = ingredients.find(i => i.id === item.ingredient_id)
+                  const sr = subRecipes.find(s => s.id === item.sub_recipe_id)
+
+                  return (
+                    <div key={item.id} className="border p-2 mb-2">
+                      {ing?.name || sr?.name} — {item.quantity}
+                    </div>
+                  )
+                })}
+
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
 
       {/* LOYALTY VIEW */}
       {view === "loyalty" && (
