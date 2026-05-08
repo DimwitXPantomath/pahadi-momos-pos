@@ -418,7 +418,7 @@ export default function Index() {
 
       {/* ── MENU VIEW ──────────────────────────────────────────── */}
       {view === "menu" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 0, height: "calc(100vh - 80px)" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 0, height: "calc(100vh - 100px)" }}>
 
           {features.tables && (
             <TableSelector
@@ -435,7 +435,7 @@ export default function Index() {
             </div>
           )}
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: 16, flex: 1, minHeight: 0 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 16, flex: 1, minHeight: 0, overflow: "hidden" }}>
             <MenuGrid
               menuItems={menuItems}
               categories={categories}

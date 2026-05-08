@@ -110,7 +110,7 @@ export default function MenuGrid({
       )}
 
       {/* Menu Grid */}
-      <div className="grid grid-cols-3 gap-3 overflow-y-auto pb-4">
+      <div className="grid grid-cols-3 gap-3 overflow-y-auto pb-4 content-start">
         {filtered.map(item => {
           // FIX: use buildCartId — matches useCart's compound ID format
           const cartItem = cart.find(i => i.id === buildCartId(item.id))
