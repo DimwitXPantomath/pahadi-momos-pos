@@ -35,7 +35,7 @@ export const useMenu = () => {
       return
     }
 
-    if (data) setMenuItems(data)
+    if (data) setMenuItems(data.map((i: any) => ({ ...i, available: i.available ?? true })))
   }, [])
 
   // ── Fetch categories ─────────────────────────────────────────────
@@ -219,7 +219,7 @@ export const useMenu = () => {
   // ── Filtered menu for display ────────────────────────────────────
   const filteredMenu = menuItems.filter(item => {
     if (activeCategory && activeCategory !== "all" && item.category_id !== activeCategory) return false
-    if (!item.available) return false
+    if (!(item.available ?? true)) return false
     if (vegFilter === "veg" && !item.is_veg) return false
     if (vegFilter === "nonveg" && item.is_veg) return false
     if (searchQuery && !item.name.toLowerCase().includes(searchQuery.toLowerCase())) return false

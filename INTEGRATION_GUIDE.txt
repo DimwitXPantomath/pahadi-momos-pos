@@ -1,0 +1,54 @@
+// ============================================================
+// INDEX.TSX — CHANGES TO MAKE
+// ============================================================
+//
+// You only need to make 2 edits to your existing Index.tsx:
+//
+// EDIT 1: Add these two import lines near the top (after your existing imports)
+// EDIT 2: Replace the {view === "ingredients"} and {view === "inventory"} blocks
+//
+// ============================================================
+
+
+// ── EDIT 1: Add these imports (after line ~22 in your Index.tsx) ─────────────
+
+// import IngredientsView from "@/components/ingredients/IngredientsView"
+// import InventoryView from "@/components/inventory/InventoryView"
+
+
+// ── EDIT 2: Find your existing ingredients view block in Index.tsx ────────────
+// It probably looks like:
+//
+//   {view === "ingredients" && (
+//     <div style={viewStyles.page}>
+//       ... old ingredients UI ...
+//     </div>
+//   )}
+//
+// REPLACE the entire block with:
+//
+//   {view === "ingredients" && (
+//     <IngredientsView />
+//   )}
+//
+//
+// ── EDIT 3: Find your existing inventory block (or add after ingredients) ─────
+// ADD this block wherever the inventory/stock view should appear:
+//
+//   {view === "inventory" && (
+//     <InventoryView />
+//   )}
+//
+//
+// ── ALSO: Add "inventory" to your View type (if not already there) ────────────
+// Find: type View = "menu" | "orders" | ... 
+// Add "inventory" to the union if missing
+//
+//
+// ── ALSO: Add inventory to NAV_ITEMS in Layout.tsx if you want it in sidebar ──
+// In Layout.tsx, add to NAV_ITEMS array:
+//   { label: "Inventory", value: "inventory", icon: "📦", roles: ["owner","manager"] },
+//
+// ============================================================
+// That's it! No other files need to change.
+// ============================================================
