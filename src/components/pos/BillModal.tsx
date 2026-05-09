@@ -1,138 +1,201 @@
-import { QRCodeSVG } from 'qrcode.react';
-import { motion } from 'framer-motion';
-import { Order, OutletInfo } from '@/types/pos';
-import { X, Printer, Share2, CheckCircle } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent } from '@/components/ui/dialog';
+import { useEffect, useRef } from "react"
+import { QRCodeCanvas } from "qrcode.react"
+import type { Order, OutletInfo } from "@/types/pos"
 
-
-interface BillModalProps {
-  order: Order | null;
-  outlet: OutletInfo;
-  isOpen: boolean;
-  onClose: () => void;
-  orderUrl: string;
+interface Props {
+  order: Order | null
+  outlet: OutletInfo
+  isOpen: boolean
+  onClose: () => void
 }
 
-export function BillModal({ order, outlet, isOpen, onClose, orderUrl }: BillModalProps) {
-  if (!order) return null;
+// ── Sound: plays a pleasant chime using Web Audio API ─────────────────────────
+function playOrderSound() {
+  try {
+    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)()
+    const notes = [523, 659, 784, 1047] // C5 E5 G5 C6
+    notes.forEach((freq, i) => {
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.connect(gain)
+      gain.connect(ctx.destination)
+      osc.frequency.value = freq
+      osc.type = "sine"
+      gain.gain.setValueAtTime(0.3, ctx.currentTime + i * 0.15)
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.15 + 0.4)
+      osc.start(ctx.currentTime + i * 0.15)
+      osc.stop(ctx.currentTime + i * 0.15 + 0.4)
+    })
+  } catch (e) {
+    console.warn("Audio not available", e)
+  }
+}
 
-  const handlePrint = () => {
-    window.print();
-  };
+// ── Push notification ─────────────────────────────────────────────────────────
+function sendNotification(orderNo: number, total: number) {
+  if (!("Notification" in window)) return
+  if (Notification.permission === "granted") {
+    new Notification("✅ Order Placed!", {
+      body: `Order #${orderNo} · ₹${total.toFixed(0)} — being prepared`,
+      icon: "/favicon.ico",
+      badge: "/favicon.ico",
+      tag: `order-${orderNo}`,
+      requireInteraction: false,
+    })
+  } else if (Notification.permission !== "denied") {
+    Notification.requestPermission().then(p => {
+      if (p === "granted") sendNotification(orderNo, total)
+    })
+  }
+}
 
-  const handleShare = async () => {
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: `Order ${order.id}`,
-          text: `Track your order from ${outlet.name}`,
-          url: orderUrl,
-        });
-      } catch (err) {
-        console.log('Share cancelled');
-      }
-    } else {
-      navigator.clipboard.writeText(orderUrl);
+export function BillModal({ order, outlet, isOpen, onClose }: Props) {
+  const printRef = useRef<HTMLDivElement>(null)
+  const orderUrl = order ? `${window.location.origin}/order/${order.id}` : ""
+
+  // Play sound + send notification when modal opens
+  useEffect(() => {
+    if (isOpen && order) {
+      playOrderSound()
+      sendNotification(order.token_no || order.order_no, order.total)
     }
-  };
+  }, [isOpen, order])
+
+  if (!isOpen || !order) return null
+
+  function handlePrint() {
+    const content = printRef.current?.innerHTML
+    if (!content) return
+    const win = window.open("", "_blank", "width=400,height=600")
+    if (!win) return
+    win.document.write(`
+      <html><head><title>Bill - ${outlet.name}</title>
+      <style>
+        body { font-family: monospace; font-size: 13px; padding: 20px; max-width: 300px; margin: 0 auto; }
+        .center { text-align: center; }
+        .bold { font-weight: bold; }
+        .line { border-top: 1px dashed #999; margin: 8px 0; }
+        .row { display: flex; justify-content: space-between; margin: 2px 0; }
+        .total { font-size: 16px; font-weight: bold; }
+        img { display: block; margin: 8px auto; }
+        @media print { button { display: none; } }
+      </style></head>
+      <body>${content}
+      <br/><button onclick="window.print()">🖨️ Print</button>
+      </body></html>
+    `)
+    win.document.close()
+    setTimeout(() => win.print(), 300)
+  }
+
+  const subtotal = order.total / 1.05
+  const gst = order.total - subtotal
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-md p-0 overflow-hidden">
-        {/* Success Header */}
-        <motion.div 
-          initial={{ scale: 0.8, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          className="bg-status-ready p-6 text-center"
-        >
-          <motion.div
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            transition={{ delay: 0.1, type: "spring", bounce: 0.5 }}
-            className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-3"
-          >
-            <CheckCircle className="w-10 h-10 text-white" />
-          </motion.div>
-          <h2 className="text-xl font-bold text-white">Order Created!</h2>
-          <p className="text-white/80">#{order.id}</p>
-        </motion.div>
+    <div style={s.overlay} onClick={onClose}>
+      <div style={s.modal} onClick={e => e.stopPropagation()}>
 
-        {/* Bill Content */}
-        <div className="p-6">
-          {/* Restaurant Info */}
-          <div className="text-center border-b border-dashed border-border pb-4 mb-4">
-            <h3 className="font-bold text-lg text-foreground">{outlet.name}</h3>
-            <p className="text-sm text-muted-foreground">{outlet.address}</p>
-            <p className="text-sm text-muted-foreground">{outlet.phone}</p>
+        {/* ── Success header ── */}
+        <div style={s.successHeader}>
+          <div style={{ fontSize: 40, marginBottom: 8 }}>✅</div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: "white" }}>Order Placed!</div>
+          <div style={{ fontSize: 13, color: "rgba(255,255,255,0.8)", marginTop: 4 }}>
+            Token #{order.token_no || order.order_no}
+          </div>
+        </div>
+
+        {/* ── Printable bill content ── */}
+        <div ref={printRef} style={s.billBody}>
+
+          {/* Header */}
+          <div style={{ textAlign: "center", borderBottom: "1px dashed #d1d5db", paddingBottom: 12, marginBottom: 12 }}>
+            <div style={{ fontSize: 16, fontWeight: 800 }}>{outlet.name}</div>
+            {outlet.address && <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2 }}>{outlet.address}</div>}
+            {outlet.phone && <div style={{ fontSize: 11, color: "#6b7280" }}>{outlet.phone}</div>}
+            {outlet.gst_number && <div style={{ fontSize: 11, color: "#6b7280" }}>GSTIN: {outlet.gst_number}</div>}
+            <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>
+              Token #{order.token_no || order.order_no} · {new Date(order.created_at).toLocaleString("en-IN", { dateStyle: "short", timeStyle: "short" })}
+            </div>
           </div>
 
-          {/* Order Details */}
-          <div className="space-y-2 mb-4">
+          {/* Items */}
+          <div style={{ marginBottom: 12 }}>
             {order.items.map((item, i) => (
-              <div key={i} className="flex justify-between text-sm">
-                <span className="text-foreground">
-                  <span className="font-medium">{item.quantity}×</span> {item.name}
-                </span>
-                <span className="text-foreground font-medium">
-                  ${(item.price * item.quantity).toFixed(2)}
-                </span>
+              <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 4 }}>
+                <span style={{ flex: 1 }}>{item.name} <span style={{ color: "#6b7280" }}>×{item.quantity}</span></span>
+                <span style={{ fontWeight: 600 }}>₹{(item.price * item.quantity).toFixed(0)}</span>
               </div>
             ))}
           </div>
 
           {/* Totals */}
-          <div className="border-t border-dashed border-border pt-3 space-y-1 mb-4">
-            <div className="flex justify-between text-sm text-muted-foreground">
-              <span>Subtotal</span>
-              <span>₹{(order.total / 1.05).toFixed(2)}</span>
+          <div style={{ borderTop: "1px dashed #d1d5db", paddingTop: 10, marginBottom: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#6b7280", marginBottom: 3 }}>
+              <span>Subtotal</span><span>₹{subtotal.toFixed(2)}</span>
             </div>
-            <div className="flex justify-between text-sm text-muted-foreground">
-              <span>Tax ({outlet.taxRate}%)</span>
-              <span>₹{(order.total - order.total / 1.05).toFixed(2)}</span>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#6b7280", marginBottom: 6 }}>
+              <span>GST (5%)</span><span>₹{gst.toFixed(2)}</span>
             </div>
-            <div className="flex justify-between text-lg font-bold text-foreground pt-2">
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 16, fontWeight: 800 }}>
               <span>Total</span>
-              <span className="text-primary">${order.total.toFixed(2)}</span>
+              <span style={{ color: "#f97316" }}>₹{order.total.toFixed(2)}</span>
+            </div>
+            <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>
+              Payment: {order.payment_method || "CASH"}
             </div>
           </div>
 
-          {/* QR Code */}
-          <div className="bg-accent/50 rounded-xl p-4 flex flex-col items-center mb-4">
-            <p className="text-sm font-medium text-muted-foreground mb-3">Scan to track order</p>
-            <div className="bg-white p-3 rounded-xl">
-              <QRCodeSVG
-                value={orderUrl}
-                size={140}
-                level="M"
-                includeMargin={false}
-              />
-            </div>
-            <p className="text-xs text-muted-foreground mt-2 text-center max-w-[200px] truncate">
-              {orderUrl}
-            </p>
+          {/* QR code */}
+          <div style={{ textAlign: "center", borderTop: "1px dashed #d1d5db", paddingTop: 12 }}>
+            <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 8 }}>Scan to track your order</div>
+            <QRCodeCanvas value={orderUrl} size={130} style={{ margin: "0 auto", display: "block" }} />
+            <div style={{ fontSize: 10, color: "#9ca3af", marginTop: 6, wordBreak: "break-all" }}>{orderUrl}</div>
           </div>
 
-          {/* Action Buttons */}
-          <div className="grid grid-cols-2 gap-3">
-            <Button variant="outline" onClick={handlePrint} className="gap-2 touch-target">
-              <Printer className="w-4 h-4" />
-              Print
-            </Button>
-            <Button variant="outline" onClick={handleShare} className="gap-2 touch-target">
-              <Share2 className="w-4 h-4" />
-              Share
-            </Button>
+          <div style={{ textAlign: "center", fontSize: 12, color: "#9ca3af", marginTop: 12 }}>
+            Thank you for visiting {outlet.name}! 🙏
           </div>
-
-          <Button 
-            onClick={onClose} 
-            className="w-full mt-3 touch-target"
-          >
-            Done
-          </Button>
         </div>
-      </DialogContent>
-    </Dialog>
-  );
+
+        {/* ── Actions ── */}
+        <div style={s.actions}>
+          <button style={s.printBtn} onClick={handlePrint}>🖨️ Print Bill</button>
+          <button style={s.closeBtn} onClick={onClose}>Done</button>
+        </div>
+
+      </div>
+    </div>
+  )
+}
+
+const s: Record<string, React.CSSProperties> = {
+  overlay: {
+    position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)",
+    display: "flex", alignItems: "center", justifyContent: "center",
+    zIndex: 1000, padding: 16,
+  },
+  modal: {
+    background: "white", borderRadius: 16, width: "100%", maxWidth: 400,
+    maxHeight: "90vh", display: "flex", flexDirection: "column", overflow: "hidden",
+    boxShadow: "0 25px 50px rgba(0,0,0,0.3)",
+  },
+  successHeader: {
+    background: "linear-gradient(135deg, #16a34a, #15803d)",
+    padding: "24px 20px", textAlign: "center", flexShrink: 0,
+  },
+  billBody: {
+    flex: 1, overflowY: "auto", padding: "16px 20px",
+  },
+  actions: {
+    display: "flex", gap: 10, padding: "12px 20px",
+    borderTop: "1px solid #e5e7eb", flexShrink: 0,
+  },
+  printBtn: {
+    flex: 1, height: 44, background: "#f3f4f6", border: "1px solid #e5e7eb",
+    borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: "pointer",
+  },
+  closeBtn: {
+    flex: 1, height: 44, background: "#111", color: "white",
+    border: "none", borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: "pointer",
+  },
 }

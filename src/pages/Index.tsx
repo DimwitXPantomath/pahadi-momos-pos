@@ -8,6 +8,7 @@ import Settings from "@/components/Settings"
 import Layout from "@/components/Layout"
 import MenuGrid from "@/components/pos/MenuGrid"
 import CartPanel from "@/components/pos/CartPanel"
+import { BillModal } from "@/components/pos/BillModal"
 import TableSelector from "@/components/pos/TableSelector"
 import OrderBoard from "@/components/pos/OrderBoard"
 import { useAuth } from "@/contexts/AuthContext"
@@ -16,7 +17,6 @@ import { useCart } from "@/hooks/useCart"
 import { useOrders } from "@/hooks/useOrders"
 import { useMenu } from "@/hooks/useMenu"
 import { usePOSConfig } from "@/hooks/usePOSConfig"
-import { printReceipt } from "@/utils/printReceipt"
 import { printKOT } from "@/utils/printKOT"
 import { expandRecipe, updateStock } from "@/services/inventoryService"
 
@@ -58,6 +58,9 @@ export default function Index() {
     startPreparing, markReady, collectOrder, updatePayment,
     getOrderTime, getOrderColor,
   } = useOrders()
+
+  const [billOrder, setBillOrder] = useState<any>(null)
+  const [showBill, setShowBill] = useState(false)
 
   const {
     menuItems, setMenuItems, categories, setCategories,
@@ -246,11 +249,11 @@ export default function Index() {
       console.warn("Stock deduction error (non-fatal):", stockErr)
     }
 
-    printReceipt(data)
     setQrOrderId(data.id)
-    setView("orders")
     clearCart()
     resetTableState()
+    setBillOrder(data)
+    setShowBill(true)
     setIsPlacingOrder(false)
     fetchMostOrdered()
   }
@@ -260,6 +263,12 @@ export default function Index() {
   useEffect(() => { fetchMenu() }, [fetchMenu])
   useEffect(() => { fetchCategories() }, [fetchCategories])
   useEffect(() => { if (user) { fetchCategories(); fetchMenu() } }, [user])
+
+  useEffect(() => {
+    if ("Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission()
+    }
+  }, [])
 
   useEffect(() => {
     if (!subscribeToOrders) return
@@ -1224,6 +1233,12 @@ export default function Index() {
         danger={confirmState.danger}
         onConfirm={handleConfirm}
         onCancel={handleCancel}
+      />
+      <BillModal
+        order={billOrder}
+        outlet={{ id: OUTLET_ID, name: "Praang", taxRate: 5 }}
+        isOpen={showBill}
+        onClose={() => { setShowBill(false); setBillOrder(null); setView("orders") }}
       />
     </>  
   );
