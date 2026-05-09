@@ -1,3 +1,4 @@
+import { useState } from "react"
 import { OrderStatus } from "@/types/pos"
 import type { Order, POSSettings } from "@/types/pos"
 
@@ -9,7 +10,7 @@ type Props = {
   readyOrders: Order[]
   collectedOrders: Order[]
   settings: POSSettings
-  getOrderTime: (createdAt: string) => string
+  getOrderTime: (createdAt: string, closedAt?: string | null) => string
   getOrderColor: (createdAt: string) => string
   startPreparing: (id: string, minutes: number) => void
   markReady: (id: string) => void
@@ -17,31 +18,39 @@ type Props = {
   updatePayment: (id: string, method: PaymentMethod) => void
 }
 
-type ColumnProps = {
-  title: string
-  emoji: string
-  orders: Order[]
-  settings: POSSettings
-  getOrderTime: (createdAt: string) => string
-  getOrderColor: (createdAt: string) => string
-  startPreparing: (id: string, minutes: number) => void
-  markReady: (id: string) => void
-  collectOrder: (id: string) => void
-  updatePayment: (id: string, method: PaymentMethod) => void
-}
+type ColumnProps = Props & { title: string; emoji: string; orders: Order[] }
 
-function OrderCard({ order, settings, getOrderTime, getOrderColor, startPreparing, markReady, collectOrder, updatePayment }: {
+function OrderCard({
+  order, settings, getOrderTime, getOrderColor,
+  startPreparing, markReady, collectOrder, updatePayment
+}: {
   order: Order
   settings: POSSettings
-  getOrderTime: (createdAt: string) => string
+  getOrderTime: (createdAt: string, closedAt?: string | null) => string
   getOrderColor: (createdAt: string) => string
   startPreparing: (id: string, minutes: number) => void
   markReady: (id: string) => void
   collectOrder: (id: string) => void
   updatePayment: (id: string, method: PaymentMethod) => void
 }) {
-  const color = getOrderColor(order.created_at)
-  const time = getOrderTime(order.created_at)
+  const isCollected = order.status === OrderStatus.COLLECTED
+  // Timer stops when collected
+  const time = getOrderTime(order.created_at, order.closed_at)
+  const color = isCollected ? "#9ca3af" : getOrderColor(order.created_at)
+
+  // Payment pre-filled from order, still changeable in READY state
+  const [selectedPayment, setSelectedPayment] = useState<PaymentMethod>(
+    (order.payment_method as PaymentMethod) || "CASH"
+  )
+
+  const handlePaymentChange = (method: PaymentMethod) => {
+    setSelectedPayment(method)
+    updatePayment(order.id, method)
+  }
+
+  const handleCollect = () => {
+    collectOrder(order.id)
+  }
 
   return (
     <div style={{
@@ -51,16 +60,21 @@ function OrderCard({ order, settings, getOrderTime, getOrderColor, startPreparin
       borderRadius: 10,
       padding: "12px 14px",
       marginBottom: 8,
+      opacity: isCollected ? 0.75 : 1,
     }}>
       {/* Token + time */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-        <span style={{ fontWeight: 800, fontSize: 15 }}>#{order.token_no}</span>
-        <span style={{ fontSize: 11, color, fontWeight: 600 }}>⏱ {time}</span>
+        <span style={{ fontWeight: 800, fontSize: 15 }}>
+          #{order.token_no || "—"}
+        </span>
+        <span style={{ fontSize: 11, color, fontWeight: 600 }}>
+          {isCollected ? "✅ Done" : `⏱ ${time}`}
+        </span>
       </div>
 
       {/* Items */}
       <div style={{ marginBottom: 8 }}>
-        {order.items?.map((item, i) => (
+        {order.items?.map((item: any, i: number) => (
           <div key={i} style={{ fontSize: 12, color: "#374151", display: "flex", justifyContent: "space-between" }}>
             <span>{item.name}</span>
             <span style={{ color: "#6b7280" }}>×{item.quantity}</span>
@@ -68,15 +82,15 @@ function OrderCard({ order, settings, getOrderTime, getOrderColor, startPreparin
         ))}
       </div>
 
-      {/* Total */}
+      {/* Total + payment */}
       <div style={{ fontSize: 12, fontWeight: 700, color: "#f97316", marginBottom: 8 }}>
         ₹{order.total?.toFixed(0)}
-        {order.payment_method && (
-          <span style={{ fontWeight: 400, color: "#6b7280", marginLeft: 6 }}>· {order.payment_method}</span>
-        )}
+        <span style={{ fontWeight: 400, color: "#6b7280", marginLeft: 6 }}>
+          · {order.payment_method || selectedPayment}
+        </span>
       </div>
 
-      {/* Actions */}
+      {/* PLACED actions */}
       {order.status === OrderStatus.PLACED && (
         <div>
           <p style={{ fontSize: 11, color: "#6b7280", marginBottom: 4 }}>Start preparing in:</p>
@@ -84,10 +98,15 @@ function OrderCard({ order, settings, getOrderTime, getOrderColor, startPreparin
             {[5, 10, 15].map(min => (
               <button
                 key={min}
-                onClick={() => startPreparing(order.id, min)}
+                onClick={() => {
+                  console.log("startPreparing called:", order.id, min)
+                  startPreparing(order.id, min)
+                }}
                 style={{
-                  flex: 1, padding: "5px 0", background: "#111", color: "white",
-                  border: "none", borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: "pointer"
+                  flex: 1, padding: "6px 0",
+                  background: "#111", color: "white",
+                  border: "none", borderRadius: 6,
+                  fontSize: 12, fontWeight: 600, cursor: "pointer",
                 }}
               >{min} min</button>
             ))}
@@ -95,35 +114,56 @@ function OrderCard({ order, settings, getOrderTime, getOrderColor, startPreparin
         </div>
       )}
 
+      {/* PREPARING actions */}
       {order.status === OrderStatus.PREPARING && (
-        <button
-          onClick={() => markReady(order.id)}
-          style={{ width: "100%", padding: "7px", background: "#16a34a", color: "white", border: "none", borderRadius: 8, fontWeight: 700, fontSize: 13, cursor: "pointer" }}
-        >✓ Mark Ready</button>
+        <div>
+          {order.ready_at && (
+            <p style={{ fontSize: 11, color: "#f97316", marginBottom: 6 }}>
+              ⏱ Ready by {new Date(order.ready_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+            </p>
+          )}
+          <button
+            onClick={() => markReady(order.id)}
+            style={{
+              width: "100%", padding: "7px",
+              background: "#16a34a", color: "white",
+              border: "none", borderRadius: 8,
+              fontWeight: 700, fontSize: 13, cursor: "pointer"
+            }}
+          >✓ Mark Ready</button>
+        </div>
       )}
 
+      {/* READY actions — payment pre-filled, still changeable */}
       {order.status === OrderStatus.READY && (
-        <div style={{ display: "flex", gap: 6 }}>
-          <select
-            value={order.payment_method || ""}
-            onChange={e => updatePayment(order.id, e.target.value as PaymentMethod)}
-            style={{ flex: 1, padding: "6px 8px", border: "1.5px solid #e5e7eb", borderRadius: 8, fontSize: 12, background: "white", color: "#111" }}
-          >
-            <option value="" disabled>Payment method</option>
-            <option value="CASH">💵 Cash</option>
-            <option value="UPI">📱 UPI</option>
-            <option value="CARD">💳 Card</option>
-          </select>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <div style={{ display: "flex", gap: 4 }}>
+            {(["CASH", "UPI", "CARD"] as PaymentMethod[]).map(method => (
+              <button
+                key={method}
+                onClick={() => handlePaymentChange(method)}
+                style={{
+                  flex: 1, padding: "5px 0",
+                  border: "1.5px solid",
+                  borderColor: selectedPayment === method ? "#111" : "#e5e7eb",
+                  background: selectedPayment === method ? "#111" : "white",
+                  color: selectedPayment === method ? "white" : "#374151",
+                  borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: "pointer",
+                }}
+              >
+                {method === "CASH" ? "💵" : method === "UPI" ? "📱" : "💳"} {method}
+              </button>
+            ))}
+          </div>
           <button
-            disabled={!order.payment_method}
-            onClick={() => collectOrder(order.id)}
+            onClick={handleCollect}
             style={{
-              padding: "6px 12px", background: order.payment_method ? "#111" : "#e5e7eb",
-              color: order.payment_method ? "white" : "#9ca3af",
-              border: "none", borderRadius: 8, fontSize: 12, fontWeight: 700,
-              cursor: order.payment_method ? "pointer" : "not-allowed"
+              width: "100%", padding: "8px",
+              background: "#111", color: "white",
+              border: "none", borderRadius: 8,
+              fontSize: 13, fontWeight: 700, cursor: "pointer",
             }}
-          >Collected</button>
+          >✓ Collected</button>
         </div>
       )}
     </div>
@@ -132,18 +172,15 @@ function OrderCard({ order, settings, getOrderTime, getOrderColor, startPreparin
 
 function OrderColumn({ title, emoji, orders, settings, getOrderTime, getOrderColor, startPreparing, markReady, collectOrder, updatePayment }: ColumnProps) {
   const sorted = settings.autoSortOrders
-    ? [...orders].sort((a, b) =>
-        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-      )
+    ? [...orders].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
     : orders
 
   return (
-    <div style={{ background: "#f9f9f9", borderRadius: 12, padding: "12px 12px" }}>
+    <div style={{ background: "#f9f9f9", borderRadius: 12, padding: "12px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
         <h3 style={{ fontWeight: 700, fontSize: 14, margin: 0 }}>{emoji} {title}</h3>
         <span style={{ background: "#e5e7eb", borderRadius: 20, padding: "2px 10px", fontSize: 12, fontWeight: 700 }}>{orders.length}</span>
       </div>
-
       {sorted.length === 0 ? (
         <p style={{ fontSize: 12, color: "#9ca3af", textAlign: "center", padding: "16px 0" }}>No orders</p>
       ) : sorted.map(order => (
@@ -164,19 +201,11 @@ function OrderColumn({ title, emoji, orders, settings, getOrderTime, getOrderCol
 }
 
 export default function OrderBoard({
-  placedOrders,
-  preparingOrders,
-  readyOrders,
-  collectedOrders,
-  settings,
-  getOrderTime,
-  getOrderColor,
-  startPreparing,
-  markReady,
-  collectOrder,
-  updatePayment,
+  placedOrders, preparingOrders, readyOrders, collectedOrders,
+  settings, getOrderTime, getOrderColor,
+  startPreparing, markReady, collectOrder, updatePayment,
 }: Props) {
-  const sharedProps = { settings, getOrderTime, getOrderColor, startPreparing, markReady, collectOrder, updatePayment }
+  const shared = { settings, getOrderTime, getOrderColor, startPreparing, markReady, collectOrder, updatePayment }
 
   return (
     <div>
@@ -186,12 +215,11 @@ export default function OrderBoard({
           {placedOrders.length + preparingOrders.length + readyOrders.length} active
         </span>
       </div>
-
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
-        <OrderColumn title="Placed" emoji="📋" orders={placedOrders} {...sharedProps} />
-        <OrderColumn title="Preparing" emoji="👨‍🍳" orders={preparingOrders} {...sharedProps} />
-        <OrderColumn title="Ready" emoji="🎉" orders={readyOrders} {...sharedProps} />
-        <OrderColumn title="Collected" emoji="✅" orders={collectedOrders} {...sharedProps} />
+        <OrderColumn title="Placed" emoji="📋" orders={placedOrders} {...shared} />
+        <OrderColumn title="Preparing" emoji="👨‍🍳" orders={preparingOrders} {...shared} />
+        <OrderColumn title="Ready" emoji="🎉" orders={readyOrders} {...shared} />
+        <OrderColumn title="Collected" emoji="✅" orders={collectedOrders} {...shared} />
       </div>
     </div>
   )

@@ -38,12 +38,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .single()
 
       if (error) {
-        console.warn("Profile fetch warning:", error.message)
-        // Profile doesn't exist yet — create a basic one
         if (error.code === "PGRST116") {
+          // Profile doesn't exist — create one
           const { data: newProfile } = await supabase
             .from("profiles")
-            .insert({ id: userId, role: "staff", name: "User" })
+            .insert({ id: userId, role: "owner", name: "Owner" })
             .select()
             .single()
           return newProfile as Profile
@@ -52,68 +51,57 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       return data as Profile
-    } catch (err) {
-      console.error("Profile fetch error:", err)
+    } catch {
       return null
     }
   }
 
   useEffect(() => {
-    // Hard timeout — never stay loading more than 5 seconds
-    const timeout = setTimeout(() => {
-      console.warn("Auth timeout — forcing load complete")
-      setIsLoading(false)
-    }, 10000)
+    let mounted = true
 
-    const init = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession()
+    // Step 1: immediately check if there's a session
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (!mounted) return
 
-        if (session?.user) {
-          setUser(session.user)
-          const prof = await fetchProfile(session.user.id)
-          setProfile(prof)
-        }
-      } catch (err) {
-        console.error("Auth init error:", err)
-      } finally {
-        clearTimeout(timeout)
-        setIsLoading(false)
+      if (session?.user) {
+        setUser(session.user)
+        // Fetch profile in background — don't block loading
+        fetchProfile(session.user.id).then(prof => {
+          if (mounted) setProfile(prof)
+        })
       }
-    }
 
-    init()
+      // Always stop loading after session check — don't wait for profile
+      setIsLoading(false)
+    }).catch(() => {
+      if (mounted) setIsLoading(false)
+    })
 
+    // Step 2: listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        console.log("Auth event:", event, "user:", session?.user?.email)
+        if (!mounted) return
 
         if (event === "SIGNED_OUT") {
           setUser(null)
           setProfile(null)
-          setIsLoading(false)
           return
         }
 
         if (session?.user) {
           setUser(session.user)
-          // Only fetch profile on sign in, not on every token refresh
-          if (event === "SIGNED_IN" || event === "USER_UPDATED") {
-            const prof = await fetchProfile(session.user.id)
-            setProfile(prof)
+          if (event === "SIGNED_IN") {
+            fetchProfile(session.user.id).then(prof => {
+              if (mounted) setProfile(prof)
+            })
           }
-        } else {
-          setUser(null)
-          setProfile(null)
         }
-
-        setIsLoading(false)
       }
     )
 
     return () => {
+      mounted = false
       subscription.unsubscribe()
-      clearTimeout(timeout)
     }
   }, [])
 
