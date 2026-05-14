@@ -1,5 +1,7 @@
 import type { OrderItem } from "@/types/pos"
 
+export type PrintMode = "BILL" | "KOT" | "KOT+BILL"
+
 type Props = {
   cart: OrderItem[]
   subtotal: number
@@ -17,6 +19,8 @@ type Props = {
   setOrderType: (v: "DINE_IN" | "TAKEAWAY") => void
   orderNotes: string
   setOrderNotes: (v: string) => void
+  printMode?: PrintMode
+  setPrintMode?: (v: PrintMode) => void
 }
 
 export default function CartPanel({

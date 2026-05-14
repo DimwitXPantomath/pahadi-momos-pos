@@ -18,12 +18,17 @@ export const useOrders = () => {
 
   // ── Fetch orders ─────────────────────────────────────────────────
   const fetchOrders = useCallback(async () => {
+    // Only fetch today's orders for the live board
+    const todayStart = new Date()
+    todayStart.setHours(0, 0, 0, 0)
+
     const { data, error } = await supabase
       .from("orders")
       .select("*")
       .eq("outlet_id", OUTLET_ID)
+      .gte("created_at", todayStart.toISOString())
       .order("created_at", { ascending: false })
-      .limit(200)
+      .limit(500)
 
     if (error) { console.error("Orders fetch error:", error); return }
     if (data) setOrders(data)
@@ -112,9 +117,11 @@ export const useOrders = () => {
 
   // ── Timer — stops when collected ─────────────────────────────────
   const getOrderTime = (createdAt: string, closedAt?: string | null) => {
+    const created = new Date(createdAt).getTime()
     const end = closedAt ? new Date(closedAt).getTime() : Date.now()
-    const diff = Math.floor((end - new Date(createdAt).getTime()) / 1000)
-    if (diff < 0) return "0:00"
+    const diff = Math.floor((end - created) / 1000)
+    // Cap at 24h to avoid showing crazy numbers for old test orders
+    if (diff < 0 || diff > 86400) return "—"
     const minutes = Math.floor(diff / 60)
     const seconds = diff % 60
     return `${minutes}:${seconds.toString().padStart(2, "0")}`

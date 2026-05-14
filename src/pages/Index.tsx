@@ -101,6 +101,7 @@ export default function Index() {
   }, [settings.posMode, setPosMode])
 
   // ── Legacy state (complex features not yet extracted) ──────────
+  const [printMode, setPrintMode] = useState<"BILL" | "KOT" | "KOT+BILL">("KOT+BILL")
   const [sizeSelectorItem, setSizeSelectorItem] = useState<MenuItem | null>(null)
   const [selectedAddons, setSelectedAddons] = useState<{ name: string; price: number }[]>([])
   const [selectedSize, setSelectedSize] = useState<{ label: string; price: number } | null>(null)
@@ -225,11 +226,13 @@ export default function Index() {
     }))
     await supabase.from("order_items").insert(orderItemsPayload)
 
-    // Print KOT per station
+    // Print based on selected mode
     const stationMap = splitItemsByStation(cart)
-    Object.entries(stationMap).forEach(([station, items]) => {
-      printKOT({ order: data, items, station })
-    })
+    if (printMode === "KOT" || printMode === "KOT+BILL") {
+      Object.entries(stationMap).forEach(([station, items]) => {
+        printKOT({ order: data, items, station })
+      })
+    }
 
     // Deduct stock — parallel, non-blocking (don't fail order if recipe missing)
     try {
@@ -485,6 +488,8 @@ export default function Index() {
               setOrderType={setOrderType}
               orderNotes={orderNotes}
               setOrderNotes={setOrderNotes}
+              printMode={printMode}
+              setPrintMode={setPrintMode}
             />
           </div>
         </div>
