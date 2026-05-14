@@ -7,7 +7,7 @@ import QRCode from "react-qr-code"
 import Settings from "@/components/Settings"
 import Layout from "@/components/Layout"
 import MenuGrid from "@/components/pos/MenuGrid"
-import CartPanel from "@/components/pos/CartPanel"
+import CartPanel, { type PrintMode } from "@/components/pos/CartPanel"
 import { BillModal } from "@/components/pos/BillModal"
 import TableSelector from "@/components/pos/TableSelector"
 import OrderBoard from "@/components/pos/OrderBoard"
@@ -101,7 +101,7 @@ export default function Index() {
   }, [settings.posMode, setPosMode])
 
   // ── Legacy state (complex features not yet extracted) ──────────
-  const [printMode, setPrintMode] = useState<"BILL" | "KOT" | "KOT+BILL">("KOT+BILL")
+  const [printMode, setPrintMode] = useState<PrintMode>("KOT+BILL")
   const [sizeSelectorItem, setSizeSelectorItem] = useState<MenuItem | null>(null)
   const [selectedAddons, setSelectedAddons] = useState<{ name: string; price: number }[]>([])
   const [selectedSize, setSelectedSize] = useState<{ label: string; price: number } | null>(null)

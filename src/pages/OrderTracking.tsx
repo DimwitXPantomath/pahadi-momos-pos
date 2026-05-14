@@ -29,9 +29,19 @@ export default function OrderTracking() {
   const prevStatusRef = useRef<string | null>(null)
 
   // ── Request notification permission ───────────────────────────────
+  // Register service worker on mount
+  useEffect(() => {
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js").catch(console.error)
+    }
+    if ("Notification" in window) {
+      setNotifPermission(Notification.permission)
+    }
+  }, [])
+
   const requestNotification = async () => {
     if (!("Notification" in window)) {
-      alert("Your browser doesn't support notifications. Keep this page open to track your order.")
+      alert("Your browser doesn't support notifications. Keep this page open.")
       return
     }
 
@@ -39,30 +49,44 @@ export default function OrderTracking() {
     setNotifPermission(permission)
 
     if (permission === "granted") {
-      // Send a test notification so user knows it works
-      new Notification("Praang Notifications Enabled 🌿", {
-        body: "We'll notify you when your order is ready!",
+      // Show test notification immediately so user confirms it works
+      new Notification("✅ Notifications On!", {
+        body: "You'll be notified when your order is ready",
         icon: "/favicon.ico",
+        tag: "praang-test",
       })
     }
   }
 
-  // ── Send notification when order is ready ─────────────────────────
   const notifyReady = useCallback((tokenNo: number) => {
-    // 1. Vibrate phone
-    if (navigator.vibrate) navigator.vibrate([400, 100, 400, 100, 400])
+    // Vibrate
+    if (navigator.vibrate) navigator.vibrate([500, 100, 500, 100, 500])
 
-    // 2. Push notification (works even when phone is locked if permission granted)
+    // Push notification — works when phone is locked if SW registered
     if (Notification.permission === "granted") {
-      new Notification("🎉 Your Order is Ready!", {
-        body: `Token #${tokenNo} — Please collect from the counter`,
-        icon: "/favicon.ico",
-        requireInteraction: true, // stays on screen until dismissed
-        tag: "order-ready",       // replaces previous notification
-      })
+      // Try via service worker first (works when locked)
+      if (navigator.serviceWorker.controller) {
+        navigator.serviceWorker.ready.then(reg => {
+          reg.showNotification("🎉 Your Order is Ready!", {
+            body: `Token #${tokenNo} — Please collect from the counter`,
+            icon: "/favicon.ico",
+            requireInteraction: true,
+            vibrate: [400, 100, 400],
+            tag: "order-ready",
+          } as NotificationOptions)
+        })
+      } else {
+        // Fallback — direct notification
+        new Notification("🎉 Your Order is Ready!", {
+          body: `Token #${tokenNo} — Please collect from the counter`,
+          icon: "/favicon.ico",
+          requireInteraction: true,
+          tag: "order-ready",
+        })
+      }
     }
 
-    // 3. Show in-app banner
+    // Show in-app banner
     setShowReadyBanner(true)
   }, [])
 

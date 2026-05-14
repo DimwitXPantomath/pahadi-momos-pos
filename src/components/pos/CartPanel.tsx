@@ -1,6 +1,6 @@
 import type { OrderItem } from "@/types/pos"
 
-export type PrintMode = "BILL" | "KOT" | "KOT+BILL"
+export type PrintMode = "KOT" | "BILL" | "KOT+BILL"
 
 type Props = {
   cart: OrderItem[]
@@ -31,6 +31,8 @@ export default function CartPanel({
   posMode, selectedTable,
   orderType, setOrderType,
   orderNotes, setOrderNotes,
+  printMode = "KOT+BILL",
+  setPrintMode,
 }: Props) {
 
   const isTableService = posMode === "TABLE_SERVICE"
@@ -174,21 +176,47 @@ export default function CartPanel({
           <option value="UPI">📱 UPI</option>
         </select>
 
-        {/* Place Order */}
-        <button
-          onClick={onPlaceOrder}
-          disabled={!canPlace}
-          style={{
-            width: "100%", padding: "13px", borderRadius: 10, border: "none",
-            background: canPlace ? "#111" : "#e5e7eb",
-            color: canPlace ? "white" : "#9ca3af",
-            fontSize: 15, fontWeight: 700,
-            cursor: canPlace ? "pointer" : "not-allowed",
-            transition: "background 0.15s",
-          }}
-        >
-          {btnLabel}
-        </button>
+        {/* Print mode + Place Order — all in one row */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {/* KOT / BILL / KOT+BILL selector */}
+          <div style={{ display: "flex", gap: 4 }}>
+            {(["KOT", "BILL", "KOT+BILL"] as const).map(mode => (
+              <button
+                key={mode}
+                onClick={() => setPrintMode?.(mode)}
+                style={{
+                  flex: 1,
+                  padding: "6px 0",
+                  border: "1.5px solid",
+                  borderColor: printMode === mode ? "#111" : "#e5e7eb",
+                  background: printMode === mode ? "#111" : "white",
+                  color: printMode === mode ? "white" : "#374151",
+                  borderRadius: 6,
+                  fontSize: 11,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  transition: "all .15s",
+                }}
+              >{mode}</button>
+            ))}
+          </div>
+
+          {/* Place Order button */}
+          <button
+            onClick={onPlaceOrder}
+            disabled={!canPlace}
+            style={{
+              width: "100%", padding: "13px", borderRadius: 10, border: "none",
+              background: canPlace ? "#111" : "#e5e7eb",
+              color: canPlace ? "white" : "#9ca3af",
+              fontSize: 15, fontWeight: 700,
+              cursor: canPlace ? "pointer" : "not-allowed",
+              transition: "background 0.15s",
+            }}
+          >
+            {btnLabel}
+          </button>
+        </div>
       </div>
     </div>
   )

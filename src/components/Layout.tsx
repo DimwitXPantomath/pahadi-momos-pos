@@ -60,15 +60,37 @@ export default function Layout({ view, setView, todayOrderCount }: Props) {
     <>
       {/* Top header bar */}
       <header style={styles.header}>
-        <button
-          onClick={() => setOpen(true)}
-          style={styles.hamburger}
-          aria-label="Open menu"
-        >
-          <span style={styles.hamburgerLine} />
-          <span style={styles.hamburgerLine} />
-          <span style={styles.hamburgerLine} />
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <button
+            onClick={() => setOpen(true)}
+            style={styles.hamburger}
+            aria-label="Open menu"
+          >
+            <span style={styles.hamburgerLine} />
+            <span style={styles.hamburgerLine} />
+            <span style={styles.hamburgerLine} />
+          </button>
+
+          {/* Home button — always visible, one tap to go to menu */}
+          {view !== "menu" && (
+            <button
+              onClick={() => { setView("menu"); setOpen(false) }}
+              style={{
+                background: "#f3f4f6",
+                border: "none",
+                borderRadius: 8,
+                padding: "6px 10px",
+                cursor: "pointer",
+                fontSize: 18,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+              aria-label="Go to menu"
+              title="Back to Menu"
+            >🏠</button>
+          )}
+        </div>
 
         <div style={styles.headerBrand}>
           <span style={{ fontSize: 18 }}>🌿</span>
