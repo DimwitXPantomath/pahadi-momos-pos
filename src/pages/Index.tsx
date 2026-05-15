@@ -22,6 +22,7 @@ import { expandRecipe, updateStock } from "@/services/inventoryService"
 import InventoryView from "@/components/inventory/InventoryView"
 import ProcurementView from "@/components/procurement/ProcurementView"
 import MISView from "@/components/mis/MISView"
+import LoyaltyView from "@/components/loyalty/LoyaltyView"
 
 const OUTLET_ID = "demo-outlet"
 
@@ -1011,59 +1012,7 @@ export default function Index() {
 
 
       {/* LOYALTY VIEW */}
-      {view === "loyalty" && (
-        <div style={viewStyles.page}>
-          <div style={viewStyles.header}>
-            <h2 style={viewStyles.title}>Loyalty Points</h2>
-            <p style={viewStyles.subtitle}>Manage your customer loyalty program</p>
-          </div>
-          <div style={viewStyles.card}>
-            <h3 style={viewStyles.cardTitle}>🔗 Customer Loyalty QR</h3>
-            <p style={viewStyles.cardDesc}>Customers scan this to join your loyalty program and check their points</p>
-            <div style={{ display: "flex", justifyContent: "center", margin: "20px 0" }}>
-              <QRCode value={`${window.location.origin}/loyalty/${OUTLET_ID}`} size={160} />
-            </div>
-            <p style={{ textAlign: "center", fontSize: 13, color: "#6b7280" }}>Print and place this at your counter</p>
-          </div>
-          <div style={viewStyles.card}>
-            <h3 style={viewStyles.cardTitle}>⚙️ Points Settings</h3>
-            <div style={viewStyles.formRow}>
-              <div style={viewStyles.formField}>
-                <label style={viewStyles.label}>Points per ₹100 spent</label>
-                <input type="number" defaultValue={10} style={viewStyles.input} placeholder="e.g. 10" />
-              </div>
-              <div style={viewStyles.formField}>
-                <label style={viewStyles.label}>₹ value per point</label>
-                <input type="number" defaultValue={0.5} step={0.1} style={viewStyles.input} placeholder="e.g. 0.5" />
-              </div>
-            </div>
-            <div style={viewStyles.formField}>
-              <label style={viewStyles.label}>Minimum points to redeem</label>
-              <input type="number" defaultValue={100} style={viewStyles.input} placeholder="e.g. 100" />
-            </div>
-            <button style={viewStyles.primaryBtn}>Save Settings</button>
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16, marginBottom: 24 }}>
-            {[
-              { label: "Total customers", value: "—", icon: "👥" },
-              { label: "Points issued", value: "—", icon: "⭐" },
-              { label: "Points redeemed", value: "—", icon: "🎁" },
-            ].map(stat => (
-              <div key={stat.label} style={viewStyles.statCard}>
-                <div style={{ fontSize: 24, marginBottom: 8 }}>{stat.icon}</div>
-                <div style={{ fontSize: 22, fontWeight: 800, color: "#111" }}>{stat.value}</div>
-                <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>{stat.label}</div>
-              </div>
-            ))}
-          </div>
-          <div style={viewStyles.card}>
-            <h3 style={viewStyles.cardTitle}>📋 Recent Activity</h3>
-            <p style={{ color: "#9ca3af", fontSize: 14, textAlign: "center", padding: "20px 0" }}>
-              Customer loyalty activity will appear here once customers start scanning
-            </p>
-          </div>
-        </div>
-      )}
+      {view === "loyalty" && <LoyaltyView />}
 
       {/* REPORTS VIEW */}
       {view === "reports" && (
