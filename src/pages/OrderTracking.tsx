@@ -1,6 +1,7 @@
 import { useParams } from "react-router-dom"
 import { useEffect, useState, useCallback, useRef } from "react"
 import { supabase } from "@/lib/supabase"
+import { requestFCMPermission } from "@/hooks/useFCM"
 
 type OrderItem = { name: string; quantity: number; price: number }
 type Order = {
@@ -9,6 +10,7 @@ type Order = {
   token_no: number
   status: "PLACED" | "PREPARING" | "READY" | "COLLECTED"
   ready_at?: string | null
+  created_at: string
   items: OrderItem[]
   total: number
 }
@@ -34,6 +36,8 @@ export default function OrderTracking() {
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/sw.js").catch(console.error)
     }
+    // FCM for background push when phone is locked
+    requestFCMPermission()
     if ("Notification" in window) {
       setNotifPermission(Notification.permission)
     }
@@ -61,6 +65,18 @@ export default function OrderTracking() {
   const notifyReady = useCallback((tokenNo: number) => {
     // Vibrate
     if (navigator.vibrate) navigator.vibrate([500, 100, 500, 100, 500])
+    // Sound
+    try {
+      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)()
+      ;[784, 1047, 1319].forEach((freq, i) => {
+        const osc = ctx.createOscillator(), gain = ctx.createGain()
+        osc.connect(gain); gain.connect(ctx.destination)
+        osc.frequency.value = freq; osc.type = "sine"
+        gain.gain.setValueAtTime(0.4, ctx.currentTime + i * 0.2)
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.2 + 0.5)
+        osc.start(ctx.currentTime + i * 0.2); osc.stop(ctx.currentTime + i * 0.2 + 0.5)
+      })
+    } catch(e) {}
 
     // Push notification — works when phone is locked if SW registered
     if (Notification.permission === "granted") {
@@ -176,6 +192,11 @@ export default function OrderTracking() {
         <p style={{ margin: "4px 0 0", fontSize: 56, fontWeight: 900, color: config.color, lineHeight: 1 }}>
           #{order.token_no ?? "—"}
         </p>
+        {order.created_at && (
+          <p style={{ fontSize: 12, color: "#9ca3af", margin: "6px 0 0" }}>
+            📅 {new Date(order.created_at).toLocaleString("en-IN", { day:"numeric", month:"short", year:"numeric", hour:"2-digit", minute:"2-digit", hour12:true })}
+          </p>
+        )}
       </div>
 
       {/* Status */}
