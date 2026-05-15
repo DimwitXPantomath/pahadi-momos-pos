@@ -4,7 +4,15 @@ import type { Order, OrderItem } from "@/types/pos"
 import { printKOT } from "@/utils/printKOT"
 import { printReceipt } from "@/utils/printReceipt"
 
-const OUTLET_ID = "demo-outlet"
+// Outlet ID — reads from profile stored in localStorage (set on login)
+const getOutletId = (): string => {
+  try {
+    const profile = JSON.parse(localStorage.getItem("praang_profile") || "{}")
+    return profile?.outlet_id ?? "demo-outlet"
+  } catch {
+    return "demo-outlet"
+  }
+}
 
 // ── Place a new order ─────────────────────────────────────────────
 export const placeOrder = async ({
@@ -37,7 +45,7 @@ export const placeOrder = async ({
   if (cart.length === 0) throw new Error("Cart is empty")
 
   const payload = {
-    outlet_id: OUTLET_ID,
+    outlet_id: getOutletId(),
     token_no: orders.length + 101,
     items: cart,
     subtotal,
@@ -65,7 +73,7 @@ export const placeOrder = async ({
   // Insert order items
   const orderItemsPayload = cart.map(item => ({
     order_id: data.id,
-    outlet_id: OUTLET_ID,
+    outlet_id: getOutletId(),
     item_id: item.id,
     quantity: item.quantity,
   }))
@@ -115,7 +123,7 @@ export const fetchOrders = async (): Promise<Order[]> => {
   const { data, error } = await supabase
     .from("orders")
     .select("*")
-    .eq("outlet_id", OUTLET_ID)
+    .eq("outlet_id", getOutletId())
     .order("created_at", { ascending: false })
 
   if (error) {
@@ -172,7 +180,7 @@ export const fetchMostOrderedItems = async () => {
   const { data, error } = await supabase
     .from("order_items")
     .select("item_id, quantity")
-    .eq("outlet_id", OUTLET_ID)
+    .eq("outlet_id", getOutletId())
 
   if (error) {
     console.error("Most ordered fetch error:", error)

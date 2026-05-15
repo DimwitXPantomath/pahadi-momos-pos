@@ -92,7 +92,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setUser(session.user)
           if (event === "SIGNED_IN") {
             fetchProfile(session.user.id).then(prof => {
-              if (mounted) setProfile(prof)
+              if (mounted) {
+                setProfile(prof)
+                if (prof) localStorage.setItem("praang_profile", JSON.stringify(prof))
+              }
             })
           }
         }
@@ -109,6 +112,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await supabase.auth.signOut()
     setUser(null)
     setProfile(null)
+    localStorage.removeItem("praang_profile")
   }
 
   return (

@@ -3,9 +3,9 @@ import { supabase } from "@/lib/supabase"
 import { OrderStatus } from "@/types/pos"
 import type { Order } from "@/types/pos"
 
-const OUTLET_ID = "demo-outlet"
+// outletId passed as parameter from component
 
-export const useOrders = () => {
+export const useOrders = (outletId: string = "demo-outlet") => {
   const [orders, setOrders] = useState<Order[]>([])
   const [isPlacingOrder, setIsPlacingOrder] = useState(false)
   const [qrOrderId, setQrOrderId] = useState<string | null>(null)
@@ -25,7 +25,7 @@ export const useOrders = () => {
     const { data, error } = await supabase
       .from("orders")
       .select("*")
-      .eq("outlet_id", OUTLET_ID)
+      .eq("outlet_id", outletId)
       .gte("created_at", todayStart.toISOString())
       .order("created_at", { ascending: false })
       .limit(500)
