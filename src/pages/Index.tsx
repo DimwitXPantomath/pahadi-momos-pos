@@ -19,6 +19,9 @@ import { useMenu } from "@/hooks/useMenu"
 import { usePOSConfig } from "@/hooks/usePOSConfig"
 import { printKOT } from "@/utils/printKOT"
 import { expandRecipe, updateStock } from "@/services/inventoryService"
+import InventoryView from "@/components/inventory/InventoryView"
+import ProcurementView from "@/components/procurement/ProcurementView"
+import MISView from "@/components/mis/MISView"
 
 const OUTLET_ID = "demo-outlet"
 
@@ -35,6 +38,7 @@ type View =
   | "subrecipes"
   | "reports"
   | "loyalty"
+  | "inventory"
 
 type PaymentMethod = "CASH" | "CARD" | "UPI"
 
@@ -777,53 +781,9 @@ export default function Index() {
         </div>
       )}
 
-      {view === "procurement" && (
-        <div>
-          <h2>Procurement</h2>
+      {view === "procurement" && <ProcurementView />}
 
-          <button onClick={generatePurchaseOrder}>
-            Generate Purchase Orders
-          </button>
-        </div>
-      )}
-
-      {view === "analytics" && (
-        <div>
-
-          <h2>Analytics Dashboard</h2>
-
-          <div className="grid grid-cols-3 gap-6">
-
-            {/* PROFIT */}
-            <div className="border p-4">
-              <h3>Profit Insights</h3>
-            </div>
-
-            {/* WASTAGE */}
-            <div className="border p-4">
-              <h3>Wastage</h3>
-            </div>
-
-            {/* SALES */}
-            <div className="border p-4">
-              <h3>Top Selling</h3>
-            </div>
-
-          </div>
-
-          {/* ✅ ADD HERE (IMPORTANT) */}
-          <div className="mt-6">
-
-            <h3>Smart Suggestions</h3>
-
-            {suggestions.map((s, i) => (
-              <div key={i}>{s}</div>
-            ))}
-
-          </div>
-
-        </div>
-      )}
+      {view === "analytics" && <MISView />}
 
       {view === "subrecipes" && (
         <div>
@@ -1177,6 +1137,8 @@ export default function Index() {
           </div>
         </div>
       )}
+
+      {view === "inventory" && <InventoryView />}
 
       {/* QR MODAL */}
       {qrOrderId && (
