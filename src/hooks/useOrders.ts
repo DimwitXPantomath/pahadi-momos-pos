@@ -3,9 +3,9 @@ import { supabase } from "@/lib/supabase"
 import { OrderStatus } from "@/types/pos"
 import type { Order } from "@/types/pos"
 
-// outletId passed as parameter from component
+const OUTLET_ID = "demo-outlet"
 
-export const useOrders = (outletId: string = "demo-outlet") => {
+export const useOrders = () => {
   const [orders, setOrders] = useState<Order[]>([])
   const [isPlacingOrder, setIsPlacingOrder] = useState(false)
   const [qrOrderId, setQrOrderId] = useState<string | null>(null)
@@ -25,7 +25,7 @@ export const useOrders = (outletId: string = "demo-outlet") => {
     const { data, error } = await supabase
       .from("orders")
       .select("*")
-      .eq("outlet_id", outletId)
+      .eq("outlet_id", OUTLET_ID)
       .gte("created_at", todayStart.toISOString())
       .order("created_at", { ascending: false })
       .limit(500)
@@ -75,7 +75,7 @@ export const useOrders = (outletId: string = "demo-outlet") => {
     }
   }
 
-  // ── Mark ready ───────────────────────────────────────────────────
+  // ── Mark ready + send FCM push to customer ──────────────────────
   const markReady = async (orderId: string) => {
     const { data, error } = await supabase
       .from("orders")
@@ -85,7 +85,34 @@ export const useOrders = (outletId: string = "demo-outlet") => {
       .single()
 
     if (error) { console.error("markReady error:", error); return }
-    if (data) setOrders(prev => prev.map(o => o.id === orderId ? data : o))
+    if (!data) return
+
+    setOrders(prev => prev.map(o => o.id === orderId ? data : o))
+
+    // ── Send FCM push notification to customer ────────────────────
+    // FCM token is stored in orders table when customer scans QR
+    // We retrieve the token linked to this order
+    try {
+      const { data: tokenRow } = await supabase
+        .from("fcm_tokens")
+        .select("token")
+        .eq("order_id", orderId)
+        .single()
+
+      const fcmToken = tokenRow?.token
+
+      if (fcmToken && data.token_no) {
+        const { error: fnError } = await supabase.functions.invoke("notify-order-ready", {
+          body: { fcmToken, tokenNo: data.token_no },
+        })
+        if (fnError) console.warn("FCM send error (non-fatal):", fnError)
+        else console.log("FCM push sent for token #", data.token_no)
+      } else {
+        console.log("No FCM token found for order — skipping push")
+      }
+    } catch (err) {
+      console.warn("FCM push failed (non-fatal):", err)
+    }
   }
 
   // ── Collect order ────────────────────────────────────────────────

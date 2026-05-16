@@ -2,17 +2,24 @@ import { useEffect, useCallback } from "react"
 import { messaging, getToken, onMessage, VAPID_KEY } from "@/lib/firebase"
 
 // ── Store FCM token to Supabase so server can push to specific device ─────────
-async function saveFCMToken(token: string) {
-  // Optional: save to Supabase for server-side pushes
-  // const { supabase } = await import("@/lib/supabase")
-  // await supabase.from("fcm_tokens").upsert({ token, created_at: new Date().toISOString() })
-  console.log("FCM Token:", token)
-  // For now, store in localStorage for reuse
+async function saveFCMToken(token: string, orderId?: string) {
+  // Always save to localStorage
   localStorage.setItem("fcm_token", token)
+  console.log("FCM Token saved:", token.substring(0, 20) + "...")
+
+  // Save to Supabase so server can push to this device
+  if (orderId) {
+    const { supabase } = await import("@/lib/supabase")
+    await supabase.from("fcm_tokens").upsert({
+      token,
+      order_id: orderId,
+      created_at: new Date().toISOString(),
+    }, { onConflict: "order_id" })
+  }
 }
 
 // ── Request permission + get FCM token ────────────────────────────────────────
-export async function requestFCMPermission(): Promise<string | null> {
+export async function requestFCMPermission(orderId?: string): Promise<string | null> {
   if (!messaging) {
     console.warn("FCM not available")
     return null
@@ -34,7 +41,7 @@ export async function requestFCMPermission(): Promise<string | null> {
     })
 
     if (token) {
-      await saveFCMToken(token)
+      await saveFCMToken(token, orderId)
       return token
     }
 

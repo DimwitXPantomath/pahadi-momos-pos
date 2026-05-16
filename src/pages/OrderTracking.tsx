@@ -36,8 +36,9 @@ export default function OrderTracking() {
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/sw.js").catch(console.error)
     }
-    // FCM for background push when phone is locked
-    requestFCMPermission()
+    // FCM for background push when phone is locked — pass order id so token is linked
+    // id comes from useParams, will be available by the time this runs
+    if (id) requestFCMPermission(id)
     if ("Notification" in window) {
       setNotifPermission(Notification.permission)
     }

@@ -24,7 +24,7 @@ import ProcurementView from "@/components/procurement/ProcurementView"
 import MISView from "@/components/mis/MISView"
 import LoyaltyView from "@/components/loyalty/LoyaltyView"
 
-// OUTLET_ID comes from auth profile — falls back to "demo-outlet" for local dev
+const OUTLET_ID = "demo-outlet"
 
 type View =
   | "menu"
@@ -47,7 +47,6 @@ export default function Index() {
   const [view, setView] = useState<View>("menu")
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const { profile, user } = useAuth()
-  const OUTLET_ID = profile?.outlet_id ?? "demo-outlet"
 
   // ── Hooks ──────────────────────────────────────────────────────
   const {
@@ -63,7 +62,7 @@ export default function Index() {
     fetchOrders, subscribeToOrders,
     startPreparing, markReady, collectOrder, updatePayment,
     getOrderTime, getOrderColor,
-  } = useOrders(OUTLET_ID)
+  } = useOrders()
 
   const [billOrder, setBillOrder] = useState<any>(null)
   const [showBill, setShowBill] = useState(false)
