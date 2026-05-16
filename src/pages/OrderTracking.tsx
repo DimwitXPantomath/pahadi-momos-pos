@@ -29,6 +29,10 @@ export default function OrderTracking() {
   const [showReadyBanner, setShowReadyBanner] = useState(false)
   const [notifPermission, setNotifPermission] = useState<NotificationPermission>("default")
   const prevStatusRef = useRef<string | null>(null)
+  const [rating, setRating] = useState(0)
+  const [reviewText, setReviewText] = useState("")
+  const [reviewSubmitted, setReviewSubmitted] = useState(false)
+  const [submittingReview, setSubmittingReview] = useState(false)
 
   // ── Request notification permission ───────────────────────────────
   // Register service worker on mount
@@ -36,9 +40,8 @@ export default function OrderTracking() {
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/sw.js").catch(console.error)
     }
-    // FCM for background push when phone is locked — pass order id so token is linked
-    // id comes from useParams, will be available by the time this runs
-    if (id) requestFCMPermission(id)
+    // FCM for background push when phone is locked
+    requestFCMPermission()
     if ("Notification" in window) {
       setNotifPermission(Notification.permission)
     }
@@ -106,6 +109,20 @@ export default function OrderTracking() {
     // Show in-app banner
     setShowReadyBanner(true)
   }, [])
+
+  // ── Submit review ────────────────────────────────────────────────
+  const submitReview = async () => {
+    if (!rating || !id) return
+    setSubmittingReview(true)
+    await supabase.from("order_reviews").insert({
+      order_id: id,
+      rating,
+      review: reviewText,
+      created_at: new Date().toISOString(),
+    })
+    setReviewSubmitted(true)
+    setSubmittingReview(false)
+  }
 
   // ── Handle status change ──────────────────────────────────────────
   const handleStatusChange = useCallback((newOrder: Order) => {
@@ -266,6 +283,54 @@ export default function OrderTracking() {
           )
         })}
       </div>
+
+      {/* Review & Rating — shown after COLLECTED */}
+      {order.status === "COLLECTED" && (
+        <div style={{ ...s.card, marginBottom: 16, textAlign: "center" }}>
+          {reviewSubmitted ? (
+            <div>
+              <p style={{ fontSize: 28, margin: "0 0 8px" }}>🙏</p>
+              <p style={{ fontWeight: 700, fontSize: 15, margin: "0 0 4px" }}>Thank you for your feedback!</p>
+              <p style={{ fontSize: 13, color: "#6b7280", margin: 0 }}>We hope to see you again soon.</p>
+            </div>
+          ) : (
+            <div>
+              <p style={{ fontWeight: 700, fontSize: 15, margin: "0 0 4px" }}>How was your experience?</p>
+              <p style={{ fontSize: 13, color: "#6b7280", margin: "0 0 16px" }}>Rate your order</p>
+              {/* Star rating */}
+              <div style={{ display: "flex", justifyContent: "center", gap: 8, marginBottom: 12 }}>
+                {[1, 2, 3, 4, 5].map(star => (
+                  <button
+                    key={star}
+                    onClick={() => setRating(star)}
+                    style={{ fontSize: 32, background: "none", border: "none", cursor: "pointer", opacity: star <= rating ? 1 : 0.3, transition: "opacity .15s" }}
+                  >⭐</button>
+                ))}
+              </div>
+              {rating > 0 && (
+                <textarea
+                  placeholder="Tell us more... (optional)"
+                  value={reviewText}
+                  onChange={e => setReviewText(e.target.value)}
+                  rows={2}
+                  style={{ width: "100%", padding: "8px 12px", border: "1.5px solid #e5e7eb", borderRadius: 10, fontSize: 13, resize: "none", marginBottom: 10, fontFamily: "system-ui", boxSizing: "border-box" as const, outline: "none" }}
+                />
+              )}
+              <button
+                onClick={submitReview}
+                disabled={!rating || submittingReview}
+                style={{
+                  width: "100%", padding: "11px", borderRadius: 10, border: "none",
+                  background: rating ? "#111" : "#e5e7eb",
+                  color: rating ? "white" : "#9ca3af",
+                  fontSize: 14, fontWeight: 700,
+                  cursor: rating ? "pointer" : "not-allowed",
+                }}
+              >{submittingReview ? "Submitting..." : "Submit Review"}</button>
+            </div>
+          )}
+        </div>
+      )}
 
       <p style={{ textAlign: "center", color: "#9ca3af", fontSize: 13 }}>
         This page updates automatically — no need to refresh!
