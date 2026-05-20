@@ -203,11 +203,11 @@ Build in this exact order (each module depends on previous):
 
 | # | Module | Status | Notes |
 |---|--------|--------|-------|
-| 1 | DB Schema + Supabase types | 🔲 TODO | Run SQL in Supabase dashboard |
-| 2 | Layout shell + routing | 🔲 TODO | Sidebar, TopBar, protected routes |
-| 3 | Ingredient Feed Form | 🔲 TODO | Real-time yield calculations |
-| 4 | Inventory Dashboard | 🔲 TODO | Stock table + low stock alerts |
-| 5 | Recipe Manager | 🔲 TODO | Ingredient cost roll-up |
+| 1 | DB Schema + Supabase types | ✅ DONE | supabase/migrations/001_initial_schema.sql |
+| 2 | Layout shell + routing | ✅ DONE | Sidebar, TopBar, protected routes — wired |
+| 3 | Ingredient Feed Form | ✅ DONE | IngredientsView — yield calc, cost/unit, CRUD |
+| 4 | Inventory Dashboard | ✅ DONE | InventoryView — stock table + low stock alerts |
+| 5 | Recipe Manager | ✅ DONE | RecipesView + SubRecipesView — cost/margin calc |
 | 6 | Production Batch | 🔲 TODO | Stock deduction + finished goods |
 | 7 | Vendor & Pricing | 🔲 TODO | Price comparison, best vendor |
 | 8 | Procurement Workflow | 🔲 TODO | 3-step: create → vendor → confirm |
@@ -341,4 +341,5 @@ When starting a new Claude Code session, always:
 | Date | Change |
 |------|--------|
 | 2026-05-07 | CLAUDE.md created, full spec documented |
+| 2026-05-20 | Modules 1–5 completed: full DB migration, IngredientsView (yield+cost), SubRecipesView (builder+cost), RecipesView (margin calc), all wired into Index.tsx |
 
