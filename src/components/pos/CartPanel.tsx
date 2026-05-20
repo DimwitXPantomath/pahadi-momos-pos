@@ -53,6 +53,7 @@ export default function CartPanel({
   // ── Credit/Due state ──────────────────────────────────────────────
   const [payment, setPayment] = useState<PaymentMethod>(paymentMethod as PaymentMethod)
   const [customerName, setCustomerName] = useState("")
+  const [customerPhone, setCustomerPhone] = useState("")
   const [dueAmount, setDueAmount] = useState<string>("")
 
   // ── Discount calculation ──────────────────────────────────────────
@@ -70,6 +71,10 @@ export default function CartPanel({
       : "Place order"
 
   const handlePlaceOrder = () => {
+    if (payment === "DUE" && !customerName.trim()) {
+      alert("Please enter customer name for credit sale")
+      return
+    }
     onPlaceOrder({
       discount: discountAmount,
       discountType,
@@ -77,7 +82,15 @@ export default function CartPanel({
       orderNotes,
       payment,
       dueAmount: payment === "DUE" ? Number(dueAmount) || finalTotal : undefined,
+      customerName: customerName.trim(),
+      customerPhone: customerPhone.trim(),
     })
+    // Reset DUE fields after order
+    if (payment === "DUE") {
+      setCustomerName("")
+      setCustomerPhone("")
+      setDueAmount("")
+    }
   }
 
   return (
@@ -235,21 +248,27 @@ export default function CartPanel({
         {/* Due/Credit fields */}
         {payment === "DUE" && (
           <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "10px 12px", marginBottom: 8 }}>
-            <p style={{ fontSize: 11, fontWeight: 600, color: "#dc2626", margin: "0 0 8px" }}>📒 Credit Sale — Amount Due</p>
+            <p style={{ fontSize: 11, fontWeight: 600, color: "#dc2626", margin: "0 0 8px" }}>📒 Credit Sale</p>
             <input
-              placeholder="Customer name"
+              placeholder="Customer name *"
               value={customerName}
               onChange={e => setCustomerName(e.target.value)}
-              style={{ width: "100%", padding: "6px 10px", border: "1.5px solid #fecaca", borderRadius: 6, fontSize: 12, outline: "none", marginBottom: 6, boxSizing: "border-box" }}
+              style={{ width: "100%", padding: "6px 10px", border: "1.5px solid #fecaca", borderRadius: 6, fontSize: 12, outline: "none", marginBottom: 6, boxSizing: "border-box" as const }}
+            />
+            <input
+              placeholder="Phone number *"
+              value={customerPhone}
+              onChange={e => setCustomerPhone(e.target.value)}
+              style={{ width: "100%", padding: "6px 10px", border: "1.5px solid #fecaca", borderRadius: 6, fontSize: 12, outline: "none", marginBottom: 6, boxSizing: "border-box" as const }}
             />
             <input
               type="number"
               placeholder={`Due amount (default: ₹${finalTotal.toFixed(0)})`}
               value={dueAmount}
               onChange={e => setDueAmount(e.target.value)}
-              style={{ width: "100%", padding: "6px 10px", border: "1.5px solid #fecaca", borderRadius: 6, fontSize: 12, outline: "none", boxSizing: "border-box" }}
+              style={{ width: "100%", padding: "6px 10px", border: "1.5px solid #fecaca", borderRadius: 6, fontSize: 12, outline: "none", boxSizing: "border-box" as const }}
             />
-            <p style={{ fontSize: 10, color: "#9ca3af", margin: "4px 0 0" }}>Leave amount empty to mark full amount as due</p>
+            <p style={{ fontSize: 10, color: "#9ca3af", margin: "4px 0 0" }}>Name and phone needed for payment reminders</p>
           </div>
         )}
 

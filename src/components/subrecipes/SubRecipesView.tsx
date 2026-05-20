@@ -100,7 +100,12 @@ export default function SubRecipesView() {
   // ── Computed ───────────────────────────────────────────────────────────────
 
   const totalCost = items.reduce((sum, i) => sum + i.line_cost, 0)
-  const costPerYieldUnit = selected && selected.yield_qty > 0 ? totalCost / selected.yield_qty : 0
+  // Total weight of all ingredients used (in grams/ml/pieces)
+  const totalWeight = items.reduce((sum, i) => sum + i.quantity, 0)
+  // Cost per gram = total ingredient cost / total weight of sub-recipe produced
+  // Use yield_qty if set (actual output weight), else use total input weight
+  const outputWeight = selected && selected.yield_qty > 0 ? selected.yield_qty : totalWeight
+  const costPerYieldUnit = outputWeight > 0 ? totalCost / outputWeight : 0
 
   const previewQty = parseFloat(addForm.quantity) || 0
   const previewIng = ingredients.find(i => i.id === addForm.ingredient_id)
@@ -284,6 +289,9 @@ export default function SubRecipesView() {
                   <div style={{ fontSize: 20, fontWeight: 800 }}>{fmtCurrency(totalCost)}</div>
                   <div style={{ fontSize: 12, color: "#16a34a", fontWeight: 700 }}>
                     {fmtCurrency(costPerYieldUnit)} / {selected.unit}
+                    <div style={{ fontSize: 10, color: "#9ca3af", marginTop: 2 }}>
+                      Total ingredient cost ÷ output weight
+                    </div>
                   </div>
                 </div>
               </div>

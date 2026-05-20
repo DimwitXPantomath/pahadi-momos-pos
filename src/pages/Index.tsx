@@ -178,7 +178,15 @@ export default function Index() {
   }, [settings.delayAlertMinutes, settings.soundAlert, alertedOrdersRef])
 
   // ── Place order ────────────────────────────────────────────────
-  const placeOrder = async () => {
+  const placeOrder = async (opts?: {
+    discount?: number
+    discountType?: string
+    cartNotes?: Record<string, string>
+    orderNotes?: string
+    payment?: string
+    dueAmount?: number
+    customerName?: string
+  }) => {
     if (cart.length === 0) { alert("Cart empty"); return }
     if (isPlacingOrder) return
     if (posMode === "TABLE_SERVICE" && !selectedTable) {
@@ -187,20 +195,26 @@ export default function Index() {
     }
     setIsPlacingOrder(true)
 
+    const discountAmount = opts?.discount ?? 0
+    const finalTotal = Math.max(0, grandTotal - discountAmount)
+    const effectivePayment = (opts?.payment ?? paymentMethod) as string
+
     const payload = {
       outlet_id: OUTLET_ID,
       items: cart,
       subtotal,
       gst,
-      total: grandTotal,
+      discount: discountAmount,
+      total: finalTotal,
       status: OrderStatus.PLACED,
-      payment_method: paymentMethod,
+      payment_method: effectivePayment === "DUE" ? "DUE" : effectivePayment,
+      notes: opts?.orderNotes || orderNotes || null,
       loyalty_points_earned: Math.floor(grandTotal / 100),
       loyalty_points_used: 0,
       created_at: new Date().toISOString(),
       ...(selectedTable ? { table_id: selectedTable } : {}),
       ...(orderType ? { order_type: orderType } : {}),
-      ...(orderNotes ? { notes: orderNotes } : {}),
+
     }
 
     let data: any = null
@@ -233,6 +247,20 @@ export default function Index() {
       quantity: item.quantity,
     }))
     await supabase.from("order_items").insert(orderItemsPayload)
+
+    // ── Log credit sale if DUE ────────────────────────────────────────
+    if (effectivePayment === "DUE") {
+      await supabase.from("credit_sales").insert({
+        order_id: data.id,
+        customer_name: opts?.customerName || "",
+        due_amount: opts?.dueAmount ?? finalTotal,
+        paid_amount: 0,
+        status: "pending",
+        outlet_id: OUTLET_ID,
+      }).then(({ error }) => {
+        if (error) console.warn("Credit sale log error:", error.message)
+      })
+    }
 
     // ── Auto-earn loyalty points ────────────────────────────────────
     // Load loyalty settings for this outlet
@@ -464,15 +492,14 @@ export default function Index() {
     <main style={{
       marginTop: 56,
       minHeight: "calc(100vh - 56px)",
-      padding: "24px 16px",
-      maxWidth: 1200,
-      marginLeft: "auto",
-      marginRight: "auto",
+      padding: "16px",
+      width: "100%",
+      boxSizing: "border-box" as const,
     }}>
 
       {/* ── MENU VIEW ──────────────────────────────────────────── */}
       {view === "menu" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 0, height: "calc(100vh - 80px)" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 0, height: "calc(100vh - 104px)", overflow: "hidden" }}>
 
           {features.tables && (
             <TableSelector
@@ -489,7 +516,7 @@ export default function Index() {
             </div>
           )}
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: 16, flex: 1, minHeight: 0 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr minmax(260px, 320px)", gap: 16, flex: 1, minHeight: 0, overflow: "hidden" }}>
             <MenuGrid
               menuItems={menuItems}
               categories={categories}
@@ -517,7 +544,7 @@ export default function Index() {
               increaseQty={increaseQty}
               decreaseQty={decreaseQty}
               isPlacingOrder={isPlacingOrder}
-              onPlaceOrder={placeOrder}
+              onPlaceOrder={(opts) => placeOrder(opts)}
               posMode={posMode}
               selectedTable={selectedTable}
               orderType={orderType}
@@ -877,48 +904,26 @@ export default function Index() {
       {view === "inventory" && <InventoryView />}
 
       {/* QR MODAL */}
-      {qrOrderId && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.6)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 100,
-          }}
-          onClick={() => setQrOrderId(null)}
-        >
+      {qrOrderId && (() => {
+        const qrOrder = orders.find(o => o.id === qrOrderId)
+        return (
           <div
-            style={{
-              background: "white",
-              padding: 24,
-              borderRadius: 12,
-              textAlign: "center",
-            }}
-            onClick={(e) => e.stopPropagation()}
+            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}
+            onClick={() => setQrOrderId(null)}
           >
-            <h3>Scan to Track Order</h3>
-
-            <QRCode
-              value={`${window.location.origin}/order/${qrOrderId}`}
-              size={200}
-            />
-
-            <p style={{ marginTop: 10 }}>
-            Token #{orders.find(o => o.id === qrOrderId)?.token_no || "-"}
-          </p>
-
-            <button
-              onClick={() => setQrOrderId(null)}
-              style={{ marginTop: 12 }}
-            >
-              Close
-            </button>
+            <div style={{ background: "white", padding: 28, borderRadius: 16, textAlign: "center", maxWidth: 320, width: "100%" }} onClick={e => e.stopPropagation()}>
+              <h3 style={{ margin: "0 0 16px", fontSize: 18, fontWeight: 800 }}>🎟️ Token #{qrOrder?.token_no || "—"}</h3>
+              <QRCode value={`${window.location.origin}/order/${qrOrderId}`} size={180} />
+              <p style={{ marginTop: 12, fontSize: 13, color: "#6b7280" }}>Customer scans this to track their order</p>
+              <p style={{ fontSize: 12, color: "#9ca3af", marginTop: 4 }}>QR expires when order is collected</p>
+              <button
+                onClick={() => setQrOrderId(null)}
+                style={{ marginTop: 16, padding: "10px 32px", background: "#111", color: "white", border: "none", borderRadius: 8, fontWeight: 600, fontSize: 14, cursor: "pointer" }}
+              >Close</button>
+            </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
         <audio
           ref={audioRef}
           src="/notification.mp3"
