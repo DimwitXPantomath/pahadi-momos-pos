@@ -26,9 +26,6 @@ interface SubRecipeItem {
   ingredient_unit: string
   ingredient_cost_per_unit: number
   quantity: number
-  yield_percent: number
-  usable_qty: number
-  wastage: number
   line_cost: number
 }
 
@@ -55,7 +52,7 @@ export default function SubRecipesView() {
   const [showForm, setShowForm] = useState(false)
 
   const [srForm, setSrForm] = useState({ name: "", yield_qty: "1", unit: "g", description: "" })
-  const [addForm, setAddForm] = useState({ ingredient_id: "", quantity: "", yield_percent: "100" })
+  const [addForm, setAddForm] = useState({ ingredient_id: "", quantity: "" })
 
   // ── Fetchers ───────────────────────────────────────────────────────────────
 
@@ -78,12 +75,11 @@ export default function SubRecipesView() {
   const fetchItems = useCallback(async (id: string) => {
     const { data } = await supabase
       .from("sub_recipe_items")
-      .select(`id, sub_recipe_id, ingredient_id, quantity, yield_percent, wastage, ingredients(name, unit, cost_per_unit)`)
+      .select(`id, sub_recipe_id, ingredient_id, quantity, ingredients(name, unit, cost_per_unit)`)
       .eq("sub_recipe_id", id)
 
     const mapped: SubRecipeItem[] = (data || []).map((row: any) => {
       const costPer = row.ingredients?.cost_per_unit ?? 0
-      const usable = row.quantity * (row.yield_percent / 100)
       return {
         id: row.id,
         sub_recipe_id: row.sub_recipe_id,
@@ -92,9 +88,6 @@ export default function SubRecipesView() {
         ingredient_unit: row.ingredients?.unit ?? "",
         ingredient_cost_per_unit: costPer,
         quantity: row.quantity,
-        yield_percent: row.yield_percent,
-        usable_qty: usable,
-        wastage: row.quantity - usable,
         line_cost: costPer * row.quantity,
       }
     })
@@ -110,10 +103,7 @@ export default function SubRecipesView() {
   const costPerYieldUnit = selected && selected.yield_qty > 0 ? totalCost / selected.yield_qty : 0
 
   const previewQty = parseFloat(addForm.quantity) || 0
-  const previewYield = parseFloat(addForm.yield_percent) || 100
   const previewIng = ingredients.find(i => i.id === addForm.ingredient_id)
-  const previewUsable = previewQty * (previewYield / 100)
-  const previewWastage = previewQty - previewUsable
   const previewCost = (previewIng?.cost_per_unit ?? 0) * previewQty
 
   // ── Actions ────────────────────────────────────────────────────────────────
@@ -139,20 +129,20 @@ export default function SubRecipesView() {
     if (!selected) return
     if (!addForm.ingredient_id) { setError("Select an ingredient"); return }
     const qty = parseFloat(addForm.quantity)
-    const yp = parseFloat(addForm.yield_percent)
     if (!qty || qty <= 0) { setError("Enter a valid quantity"); return }
     setSaving(true); setError("")
-    const usable = qty * (yp / 100)
+
+    // yield_percent defaults to 100 — no wastage at recipe level (ingredient already tracks processing yield)
     const { error } = await supabase.from("sub_recipe_items").insert({
       sub_recipe_id: selected.id,
       ingredient_id: addForm.ingredient_id,
       quantity: qty,
-      yield_percent: yp,
-      wastage: qty - usable,
+      yield_percent: 100,
+      wastage: 0,
     })
     if (error) { setError(error.message); setSaving(false); return }
     setSuccess("Ingredient added!")
-    setAddForm({ ingredient_id: "", quantity: "", yield_percent: "100" })
+    setAddForm({ ingredient_id: "", quantity: "" })
     fetchItems(selected.id)
     setTimeout(() => setSuccess(""), 2000)
     setSaving(false)
@@ -298,10 +288,10 @@ export default function SubRecipesView() {
                 </div>
               </div>
 
-              {/* Add ingredient */}
+              {/* Add ingredient — simplified to just ingredient + qty */}
               <div style={{ padding: "14px 18px", borderBottom: "1px solid #f3f4f6" }}>
                 <div style={s.cardTitle}>➕ Add Ingredient</div>
-                <div style={s.grid3}>
+                <div style={s.grid2}>
                   <div style={s.field}>
                     <label style={s.label}>Ingredient *</label>
                     <select style={s.input} value={addForm.ingredient_id}
@@ -315,26 +305,24 @@ export default function SubRecipesView() {
                     </select>
                   </div>
                   <div style={s.field}>
-                    <label style={s.label}>Qty ({previewIng?.unit || "unit"}) *</label>
+                    <label style={s.label}>
+                      Quantity ({previewIng?.unit || "unit"}) *
+                    </label>
                     <input style={s.input} type="number" min="0" step="0.01"
                       placeholder="e.g. 200" value={addForm.quantity}
                       onChange={e => setAddForm(f => ({ ...f, quantity: e.target.value }))} />
-                  </div>
-                  <div style={s.field}>
-                    <label style={s.label}>Yield %</label>
-                    <input style={s.input} type="number" min="1" max="100" step="0.1"
-                      value={addForm.yield_percent}
-                      onChange={e => setAddForm(f => ({ ...f, yield_percent: e.target.value }))} />
                   </div>
                 </div>
 
                 {previewQty > 0 && addForm.ingredient_id && (
                   <div style={s.previewStrip}>
-                    <span>Usable: <strong>{fmt(previewUsable)} {previewIng?.unit}</strong></span>
+                    <span>Using <strong>{fmt(previewQty)} {previewIng?.unit}</strong> of {previewIng?.name}</span>
                     <span style={{ margin: "0 10px", color: "#d1d5db" }}>|</span>
-                    <span style={{ color: "#ef4444" }}>Wastage: <strong>{fmt(previewWastage)} {previewIng?.unit}</strong></span>
+                    <span style={{ color: "#16a34a" }}>Line cost: <strong>{fmtCurrency(previewCost)}</strong></span>
                     <span style={{ margin: "0 10px", color: "#d1d5db" }}>|</span>
-                    <span style={{ color: "#16a34a" }}>Cost: <strong>{fmtCurrency(previewCost)}</strong></span>
+                    <span style={{ color: "#6b7280", fontSize: 12 }}>
+                      {fmtCurrency(previewIng?.cost_per_unit ?? 0)}/{previewIng?.unit}
+                    </span>
                   </div>
                 )}
 
@@ -346,7 +334,7 @@ export default function SubRecipesView() {
                 </div>
               </div>
 
-              {/* Ingredients table */}
+              {/* Ingredients table — simplified */}
               {items.length === 0 ? (
                 <div style={s.empty}>No ingredients yet. Add above.</div>
               ) : (
@@ -354,7 +342,7 @@ export default function SubRecipesView() {
                   <table style={s.table}>
                     <thead>
                       <tr>
-                        {["Ingredient", "Input Qty", "Yield %", "Usable", "Wastage", "₹/unit", "Line Cost", ""].map(h => (
+                        {["Ingredient", "Quantity", "₹/unit", "Line Cost", ""].map(h => (
                           <th key={h} style={s.th}>{h}</th>
                         ))}
                       </tr>
@@ -363,20 +351,11 @@ export default function SubRecipesView() {
                       {items.map((item, i) => (
                         <tr key={item.id} style={{ background: i % 2 === 0 ? "white" : "#f9fafb" }}>
                           <td style={{ ...s.td, fontWeight: 600 }}>{item.ingredient_name}</td>
-                          <td style={{ ...s.td, textAlign: "right" }}>{fmt(item.quantity)} {item.ingredient_unit}</td>
                           <td style={{ ...s.td, textAlign: "right" }}>
-                            <span style={{ ...s.yieldBadge, background: item.yield_percent >= 90 ? "#dcfce7" : item.yield_percent >= 70 ? "#fef9c3" : "#fee2e2", color: item.yield_percent >= 90 ? "#166534" : item.yield_percent >= 70 ? "#854d0e" : "#991b1b" }}>
-                              {item.yield_percent}%
-                            </span>
-                          </td>
-                          <td style={{ ...s.td, textAlign: "right", color: "#16a34a", fontWeight: 600 }}>
-                            {fmt(item.usable_qty)} {item.ingredient_unit}
-                          </td>
-                          <td style={{ ...s.td, textAlign: "right", color: "#ef4444" }}>
-                            {fmt(item.wastage)} {item.ingredient_unit}
+                            {fmt(item.quantity)} {item.ingredient_unit}
                           </td>
                           <td style={{ ...s.td, textAlign: "right", color: "#6b7280" }}>
-                            {fmtCurrency(item.ingredient_cost_per_unit)}
+                            {fmtCurrency(item.ingredient_cost_per_unit)}/{item.ingredient_unit}
                           </td>
                           <td style={{ ...s.td, textAlign: "right", fontWeight: 700 }}>
                             {fmtCurrency(item.line_cost)}
@@ -387,13 +366,21 @@ export default function SubRecipesView() {
                         </tr>
                       ))}
                       <tr style={{ background: "#f0fdf4", borderTop: "2px solid #bbf7d0" }}>
-                        <td colSpan={6} style={{ ...s.td, fontWeight: 700 }}>Total · {items.length} ingredient{items.length !== 1 ? "s" : ""}</td>
-                        <td style={{ ...s.td, textAlign: "right", fontWeight: 800, fontSize: 16, color: "#16a34a" }}>{fmtCurrency(totalCost)}</td>
+                        <td colSpan={3} style={{ ...s.td, fontWeight: 700 }}>
+                          Total · {items.length} ingredient{items.length !== 1 ? "s" : ""}
+                        </td>
+                        <td style={{ ...s.td, textAlign: "right", fontWeight: 800, fontSize: 16, color: "#16a34a" }}>
+                          {fmtCurrency(totalCost)}
+                        </td>
                         <td style={s.td} />
                       </tr>
                       <tr style={{ background: "#f0fdf4" }}>
-                        <td colSpan={6} style={{ ...s.td, color: "#6b7280", fontSize: 13 }}>Cost per {selected.unit} of {selected.name}</td>
-                        <td style={{ ...s.td, textAlign: "right", fontWeight: 800, color: "#16a34a" }}>{fmtCurrency(costPerYieldUnit)}/{selected.unit}</td>
+                        <td colSpan={3} style={{ ...s.td, color: "#6b7280", fontSize: 13 }}>
+                          Cost per {selected.unit} of {selected.name}
+                        </td>
+                        <td style={{ ...s.td, textAlign: "right", fontWeight: 800, color: "#16a34a" }}>
+                          {fmtCurrency(costPerYieldUnit)}/{selected.unit}
+                        </td>
                         <td style={s.td} />
                       </tr>
                     </tbody>
@@ -427,8 +414,7 @@ const s: Record<string, React.CSSProperties> = {
   emptyBuilder: { display: "flex", flexDirection: "column", alignItems: "center", padding: "80px 20px", color: "#9ca3af" },
   card: { background: "white", border: "1px solid #e5e7eb", borderRadius: 12, padding: 20, marginBottom: 16 },
   cardTitle: { fontSize: 14, fontWeight: 700, color: "#111", marginBottom: 12 },
-  grid2: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 },
-  grid3: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 10 },
+  grid2: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 10 },
   field: { display: "flex", flexDirection: "column", gap: 4 },
   label: { fontSize: 11, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.5px" },
   input: { height: 40, padding: "0 12px", border: "1px solid #d1d5db", borderRadius: 8, fontSize: 14, color: "#111", background: "#fafafa", outline: "none", width: "100%", boxSizing: "border-box" },
@@ -438,7 +424,6 @@ const s: Record<string, React.CSSProperties> = {
   table: { width: "100%", borderCollapse: "collapse", fontSize: 13 },
   th: { padding: "10px 12px", background: "#f3f4f6", textAlign: "left", fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.5px", whiteSpace: "nowrap" },
   td: { padding: "10px 12px", borderBottom: "1px solid #f3f4f6", color: "#111", whiteSpace: "nowrap" },
-  yieldBadge: { display: "inline-block", padding: "2px 8px", borderRadius: 20, fontSize: 12, fontWeight: 700 },
   delBtn: { background: "#fee2e2", border: "none", borderRadius: 6, width: 30, height: 30, cursor: "pointer", fontSize: 13 },
   empty: { textAlign: "center", padding: "32px 20px", color: "#9ca3af", fontSize: 14 },
   errorBanner: { background: "#fee2e2", color: "#991b1b", borderRadius: 8, padding: "10px 14px", fontSize: 13, marginBottom: 12 },
