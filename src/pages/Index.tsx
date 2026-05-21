@@ -193,7 +193,13 @@ export default function Index() {
   }, [])
 
   // ── Place order ────────────────────────────────────────────────
-  const placeOrder = async () => {
+  const placeOrder = async (opts?: {
+    discount?: number; discountType?: string
+    cartNotes?: Record<string, string>; orderNotes?: string
+    payment?: string; dueAmount?: number
+    customerName?: string; customerPhone?: string
+    splitPayments?: Record<string, number>
+  }) => {
     if (cart.length === 0) { alert("Cart empty"); return }
     if (isPlacingOrder) return
     if (posMode === "TABLE_SERVICE" && !selectedTable) {
@@ -202,20 +208,25 @@ export default function Index() {
     }
     setIsPlacingOrder(true)
 
+    const discountAmount = opts?.discount ?? 0
+    const finalTotal = Math.max(0, grandTotal - discountAmount)
+    const effectivePayment = opts?.payment ?? paymentMethod
+
     const payload = {
       outlet_id: OUTLET_ID,
       items: cart,
       subtotal,
       gst,
-      total: grandTotal,
+      discount: discountAmount,
+      total: finalTotal,
       status: OrderStatus.PLACED,
-      payment_method: paymentMethod,
-      loyalty_points_earned: Math.floor(grandTotal / 100),
+      payment_method: effectivePayment,
+      notes: opts?.orderNotes || orderNotes || null,
+      loyalty_points_earned: Math.floor(finalTotal / 100),
       loyalty_points_used: 0,
       created_at: new Date().toISOString(),
       ...(selectedTable ? { table_id: selectedTable } : {}),
       ...(orderType ? { order_type: orderType } : {}),
-      ...(orderNotes ? { notes: orderNotes } : {}),
     }
 
     let data: any = null
@@ -249,11 +260,26 @@ export default function Index() {
     }))
     await supabase.from("order_items").insert(orderItemsPayload)
 
+    // ── Log credit/due sale ──────────────────────────────────────────
+    if (effectivePayment === "DUE") {
+      await supabase.from("credit_sales").insert({
+        order_id: data.id,
+        customer_name: opts?.customerName || "",
+        customer_phone: opts?.customerPhone || "",
+        due_amount: opts?.dueAmount ?? finalTotal,
+        paid_amount: 0,
+        status: "pending",
+        outlet_id: OUTLET_ID,
+      }).then(({ error }) => {
+        if (error) console.warn("Credit sale log error:", error.message)
+      })
+    }
+
     // ── Auto-earn loyalty points ────────────────────────────────────
     // Load loyalty settings for this outlet
     const { data: loyaltySettings } = await supabase
       .from("loyalty_settings")
-      .select("points_per_100, customer_phone_for_order")
+      .select("points_per_100")
       .eq("outlet_id", OUTLET_ID)
       .single()
 
@@ -533,7 +559,7 @@ export default function Index() {
               increaseQty={increaseQty}
               decreaseQty={decreaseQty}
               isPlacingOrder={isPlacingOrder}
-              onPlaceOrder={placeOrder}
+              onPlaceOrder={(opts) => placeOrder(opts)}
               posMode={posMode}
               selectedTable={selectedTable}
               orderType={orderType}
