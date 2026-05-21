@@ -107,7 +107,10 @@ export default function SubRecipesView() {
   // ── Computed ───────────────────────────────────────────────────────────────
 
   const totalCost = items.reduce((sum, i) => sum + i.line_cost, 0)
-  const costPerYieldUnit = selected && selected.yield_qty > 0 ? totalCost / selected.yield_qty : 0
+  // Total weight = sum of all input quantities (what actually goes into the sub-recipe)
+  const totalInputWeight = items.reduce((sum, i) => sum + i.quantity, 0)
+  // Cost per gram/unit = total cost of ingredients used ÷ total weight of sub-recipe created
+  const costPerYieldUnit = totalInputWeight > 0 ? totalCost / totalInputWeight : 0
 
   const previewQty = parseFloat(addForm.quantity) || 0
   const previewYield = parseFloat(addForm.yield_percent) || 100
@@ -290,11 +293,16 @@ export default function SubRecipesView() {
                   </div>
                 </div>
                 <div style={s.costBox}>
-                  <div style={{ fontSize: 11, color: "#6b7280" }}>Batch cost</div>
+                  <div style={{ fontSize: 11, color: "#6b7280" }}>Total ingredient cost</div>
                   <div style={{ fontSize: 20, fontWeight: 800 }}>{fmtCurrency(totalCost)}</div>
                   <div style={{ fontSize: 12, color: "#16a34a", fontWeight: 700 }}>
                     {fmtCurrency(costPerYieldUnit)} / {selected.unit}
                   </div>
+                  {totalInputWeight > 0 && (
+                    <div style={{ fontSize: 10, color: "#9ca3af", marginTop: 2 }}>
+                      ÷ {fmt(totalInputWeight, 1)} {selected.unit} input
+                    </div>
+                  )}
                 </div>
               </div>
 

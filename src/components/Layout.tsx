@@ -22,7 +22,8 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Loyalty Points",  value: "loyalty",     icon: "⭐",  roles: ["owner", "manager"] },
   { label: "Reports",         value: "reports",     icon: "📤",  roles: ["owner"] },
   { label: "Settings",        value: "settings",    icon: "⚙️",  roles: ["owner"] },
-  { label: "Inventory", value: "inventory", icon: "📦", roles: ["owner","manager"] },
+  { label: "Inventory",      value: "inventory", icon: "📦", roles: ["owner","manager"] },
+  { label: "Expenses / P&L", value: "expenses",  icon: "💸", roles: ["owner"] },
 ]
 
 type Props = {

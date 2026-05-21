@@ -19,28 +19,33 @@ const s: Record<string, React.CSSProperties> = {
 }
 
 export default function MISView() {
-  const [tab, setTab] = useState<"sales" | "items" | "inventory" | "procurement">("sales")
+  const [tab, setTab] = useState<"sales" | "items" | "inventory" | "procurement" | "credit">("sales")
   const [orders, setOrders] = useState<Order[]>([])
   const [logs, setLogs] = useState<any[]>([])
   const [ingredients, setIngredients] = useState<any[]>([])
   const [stock, setStock] = useState<any[]>([])
   const [procItems, setProcItems] = useState<any[]>([])
+  const [creditSales, setCreditSales] = useState<any[]>([])
+  const [creditSearch, setCreditSearch] = useState("")
+  const [creditFilter, setCreditFilter] = useState<"all" | "pending" | "paid">("all")
   const [dateRange, setDateRange] = useState(7) // days
 
   const load = useCallback(async () => {
     const since = new Date(Date.now() - dateRange * 86400000).toISOString()
-    const [{ data: o }, { data: l }, { data: i }, { data: st }, { data: pi }] = await Promise.all([
+    const [{ data: o }, { data: l }, { data: i }, { data: st }, { data: pi }, { data: cs }] = await Promise.all([
       supabase.from("orders").select("*").gte("created_at", since).order("created_at", { ascending: false }),
       supabase.from("inventory_logs").select("*, ingredients(name, unit)").gte("created_at", since),
       supabase.from("ingredients").select("*"),
       supabase.from("inventory_stock").select("*, ingredients(name, unit)"),
       supabase.from("procurement_items").select("*, ingredients(name), procurement_requests(created_at, vendors(name))").gte("created_at", since),
+      supabase.from("credit_sales").select("*").order("created_at", { ascending: false }),
     ])
     if (o) setOrders(o)
     if (l) setLogs(l)
     if (i) setIngredients(i)
     if (st) setStock(st)
     if (pi) setProcItems(pi)
+    if (cs) setCreditSales(cs)
   }, [dateRange])
 
   useEffect(() => { load() }, [load])
@@ -48,10 +53,13 @@ export default function MISView() {
   // ── Sales aggregation ─────────────────────────────────────────
   const totalRevenue = orders.reduce((s, o) => s + (o.total || 0), 0)
   const avgOrder = orders.length ? totalRevenue / orders.length : 0
-  const paymentBreakdown = orders.reduce((acc: Record<string, number>, o) => {
-    acc[o.payment_method || "CASH"] = (acc[o.payment_method || "CASH"] || 0) + o.total
-    return acc
-  }, {})
+  // Fixed sequence: CASH | CARD | UPI | DUE — always show all four, even if zero
+  const paymentBreakdown: Record<string, number> = { CASH: 0, CARD: 0, UPI: 0, DUE: 0 }
+  orders.forEach(o => {
+    const method = (o.payment_method || "CASH").toUpperCase()
+    if (method in paymentBreakdown) paymentBreakdown[method] += o.total || 0
+    else paymentBreakdown["CASH"] += o.total || 0
+  })
 
   // Daily sales grouped
   const dailySales = orders.reduce((acc: Record<string, { orders: number; revenue: number }>, o) => {
@@ -117,7 +125,7 @@ export default function MISView() {
       </div>
 
       <div style={s.tabs}>
-        {([["sales", "📊 Sales"], ["items", "🍽️ Items"], ["inventory", "📦 Inventory"], ["procurement", "🛒 Procurement"]] as const).map(([key, label]) => (
+        {([["sales", "📊 Sales"], ["items", "🍽️ Items"], ["inventory", "📦 Inventory"], ["procurement", "🛒 Procurement"], ["credit", "📒 Credit"]] as const).map(([key, label]) => (
           <button key={key} onClick={() => setTab(key)} style={{
             ...s.tab,
             background: tab === key ? "white" : "transparent",
@@ -164,13 +172,18 @@ export default function MISView() {
 
           <div style={s.card}>
             <h3 style={s.cardTitle}>Payment Breakdown</h3>
-            <div style={{ display: "flex", gap: 12 }}>
-              {Object.entries(paymentBreakdown).map(([method, amount]) => (
-                <div key={method} style={{ ...s.stat, flex: 1 }}>
-                  <div style={s.statVal}>₹{(amount as number).toFixed(0)}</div>
-                  <div style={s.statLbl}>{method}</div>
-                </div>
-              ))}
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+              {(["CASH", "CARD", "UPI", "DUE"] as const).map(method => {
+                const icons: Record<string, string> = { CASH: "💵", CARD: "💳", UPI: "📱", DUE: "📒" }
+                const colors: Record<string, string> = { CASH: "#16a34a", CARD: "#2563eb", UPI: "#7c3aed", DUE: "#dc2626" }
+                const amt = paymentBreakdown[method] || 0
+                return (
+                  <div key={method} style={{ ...s.stat, flex: 1, minWidth: 80, borderLeft: `3px solid ${colors[method]}`, paddingLeft: 10 }}>
+                    <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 4 }}>{icons[method]} {method}</div>
+                    <div style={{ ...s.statVal, color: amt > 0 ? colors[method] : "#9ca3af" }}>₹{amt.toFixed(0)}</div>
+                  </div>
+                )
+              })}
             </div>
           </div>
         </div>
@@ -275,6 +288,131 @@ export default function MISView() {
           </table>
         </div>
       )}
+
+      {/* ── CREDIT SALES ── */}
+      {tab === "credit" && (() => {
+        const filtered = creditSales.filter(cs => {
+          const matchSearch = !creditSearch ||
+            (cs.customer_name || "").toLowerCase().includes(creditSearch.toLowerCase()) ||
+            (cs.customer_phone || "").includes(creditSearch)
+          const matchFilter = creditFilter === "all" ||
+            (creditFilter === "pending" && !cs.paid) ||
+            (creditFilter === "paid" && cs.paid)
+          return matchSearch && matchFilter
+        })
+        const totalDue = creditSales.filter(cs => !cs.paid).reduce((sum, cs) => sum + (cs.amount || 0), 0)
+        const totalPaid = creditSales.filter(cs => cs.paid).reduce((sum, cs) => sum + (cs.amount || 0), 0)
+        const pendingCount = creditSales.filter(cs => !cs.paid).length
+
+        return (
+          <div>
+            {/* Summary stats */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 16 }}>
+              <div style={s.stat}>
+                <div style={{ ...s.statVal, color: "#dc2626" }}>₹{totalDue.toFixed(0)}</div>
+                <div style={s.statLbl}>Total Outstanding</div>
+              </div>
+              <div style={s.stat}>
+                <div style={{ ...s.statVal, color: "#16a34a" }}>₹{totalPaid.toFixed(0)}</div>
+                <div style={s.statLbl}>Total Collected</div>
+              </div>
+              <div style={s.stat}>
+                <div style={{ ...s.statVal, color: pendingCount > 0 ? "#f97316" : "#111" }}>{pendingCount}</div>
+                <div style={s.statLbl}>Pending Bills</div>
+              </div>
+            </div>
+
+            <div style={s.card}>
+              {/* Search + filter row */}
+              <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
+                <input
+                  type="text"
+                  placeholder="🔍 Search by name or phone…"
+                  value={creditSearch}
+                  onChange={e => setCreditSearch(e.target.value)}
+                  style={{ flex: 1, minWidth: 200, padding: "7px 12px", border: "1.5px solid #e5e7eb", borderRadius: 8, fontSize: 13, outline: "none" }}
+                />
+                <div style={{ display: "flex", gap: 4 }}>
+                  {(["all", "pending", "paid"] as const).map(f => (
+                    <button
+                      key={f}
+                      onClick={() => setCreditFilter(f)}
+                      style={{
+                        padding: "6px 14px", border: "1.5px solid", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer",
+                        borderColor: creditFilter === f ? "#111" : "#e5e7eb",
+                        background: creditFilter === f ? "#111" : "white",
+                        color: creditFilter === f ? "white" : "#6b7280",
+                        textTransform: "capitalize",
+                      }}
+                    >{f}</button>
+                  ))}
+                </div>
+                <button
+                  onClick={() => exportCSV(
+                    [["Date", "Customer", "Phone", "Amount", "Status", "Order ID"],
+                     ...filtered.map(cs => [
+                       new Date(cs.created_at).toLocaleDateString("en-IN"),
+                       cs.customer_name || "—",
+                       cs.customer_phone || "—",
+                       cs.amount?.toFixed(2) || "0",
+                       cs.paid ? "Paid" : "Pending",
+                       cs.order_id || "—",
+                     ])],
+                    "credit-sales"
+                  )}
+                  style={{ fontSize: 11, color: "#6b7280", background: "none", border: "1px solid #e5e7eb", borderRadius: 6, padding: "6px 10px", cursor: "pointer" }}
+                >⬇ CSV</button>
+              </div>
+
+              <table style={s.table}>
+                <thead>
+                  <tr>
+                    <th style={s.th}>Date</th>
+                    <th style={s.th}>Customer</th>
+                    <th style={s.th}>Phone</th>
+                    <th style={s.th}>Amount</th>
+                    <th style={s.th}>Status</th>
+                    <th style={s.th}>Order ID</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.length === 0 && (
+                    <tr>
+                      <td colSpan={6} style={{ ...s.td, color: "#9ca3af", textAlign: "center", padding: "28px" }}>
+                        {creditSales.length === 0 ? "No credit sales recorded yet" : "No results match your search"}
+                      </td>
+                    </tr>
+                  )}
+                  {filtered.map(cs => (
+                    <tr key={cs.id}>
+                      <td style={s.td}>{new Date(cs.created_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "2-digit" })}</td>
+                      <td style={{ ...s.td, fontWeight: 600 }}>{cs.customer_name || <span style={{ color: "#9ca3af" }}>—</span>}</td>
+                      <td style={s.td}>{cs.customer_phone || <span style={{ color: "#9ca3af" }}>—</span>}</td>
+                      <td style={{ ...s.td, fontWeight: 700, color: cs.paid ? "#16a34a" : "#dc2626" }}>₹{(cs.amount || 0).toFixed(0)}</td>
+                      <td style={s.td}>
+                        <span style={{
+                          display: "inline-block",
+                          padding: "2px 10px",
+                          borderRadius: 20,
+                          fontSize: 11,
+                          fontWeight: 700,
+                          background: cs.paid ? "#dcfce7" : "#fef2f2",
+                          color: cs.paid ? "#15803d" : "#dc2626",
+                        }}>
+                          {cs.paid ? "✓ Paid" : "⏳ Pending"}
+                        </span>
+                      </td>
+                      <td style={{ ...s.td, fontFamily: "monospace", fontSize: 11, color: "#6b7280" }}>
+                        {cs.order_id ? cs.order_id.slice(0, 8) + "…" : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }

@@ -52,6 +52,7 @@ export default function CartPanel({
 
   // ── Credit/Due state ──────────────────────────────────────────────
   const [payment, setPayment] = useState<PaymentMethod>(paymentMethod as PaymentMethod)
+  const [customerPhone, setCustomerPhone] = useState("")
   const [customerName, setCustomerName] = useState("")
   const [dueAmount, setDueAmount] = useState<string>("")
 
@@ -77,6 +78,8 @@ export default function CartPanel({
       orderNotes,
       payment,
       dueAmount: payment === "DUE" ? Number(dueAmount) || finalTotal : undefined,
+      customerPhone: payment === "DUE" ? customerPhone : undefined,
+      customerName: payment === "DUE" ? customerName : undefined,
     })
   }
 
@@ -235,7 +238,14 @@ export default function CartPanel({
         {/* Due/Credit fields */}
         {payment === "DUE" && (
           <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "10px 12px", marginBottom: 8 }}>
-            <p style={{ fontSize: 11, fontWeight: 600, color: "#dc2626", margin: "0 0 8px" }}>📒 Credit Sale — Amount Due</p>
+            <p style={{ fontSize: 11, fontWeight: 600, color: "#dc2626", margin: "0 0 8px" }}>📒 Credit Sale — Customer Details</p>
+            <input
+              type="tel"
+              placeholder="Phone number *"
+              value={customerPhone}
+              onChange={e => setCustomerPhone(e.target.value)}
+              style={{ width: "100%", padding: "6px 10px", border: "1.5px solid #fecaca", borderRadius: 6, fontSize: 12, outline: "none", marginBottom: 6, boxSizing: "border-box" }}
+            />
             <input
               placeholder="Customer name"
               value={customerName}

@@ -309,6 +309,33 @@ First result = BEST (highlight in green).
 8. **Run `npm run build` after each module** to catch TypeScript errors before moving on.
 9. **All Supabase queries go in custom hooks** (`src/hooks/`) — never inline in components.
 10. **SQL migrations go in `supabase/migrations/`** as numbered files (e.g., `001_initial_schema.sql`).
+11. **`public/` must always be lowercase** — macOS is case-insensitive and will silently accept `Public/`, but Vercel deploys on Linux where `Public/ ≠ public/` and Vite won't serve the files. Always verify with `git ls-tree HEAD -- public/` that entries are lowercase.
+
+---
+
+## ⚠️ Known Gotchas
+
+### `public/` case sensitivity (fixed 2026-05-21)
+The `public/` directory was originally committed as `Public/` (capital P). macOS's case-insensitive filesystem hid this — `git status` always said "nothing to commit." On Vercel's Linux build, `Public/ ≠ public/`, so all static assets (firebase-messaging-sw.js, sw.js, etc.) returned 404. Fixed by removing `Public/` entries from the git index and re-adding as `public/`.
+
+If you ever see static assets 404 on Vercel but working locally, run:
+```bash
+git ls-tree HEAD -- public/
+git ls-tree HEAD -- Public/
+```
+If entries appear under `Public/`, fix with:
+```bash
+git rm -r --cached 'Public/'
+git add public/
+git commit -m "fix: rename Public/ to public/ for case-sensitive deployment"
+```
+
+### Stale `index.lock` (fixed 2026-05-21)
+A stale `.git/index.lock` file caused every `git add` to silently do nothing. If `git add -v` produces no output and files are confirmed untracked via `git ls-files --others`, check for a stale lock:
+```bash
+ls .git/index.lock   # if exists, delete it
+rm .git/index.lock
+```
 
 ---
 
@@ -342,4 +369,5 @@ When starting a new Claude Code session, always:
 |------|--------|
 | 2026-05-07 | CLAUDE.md created, full spec documented |
 | 2026-05-20 | Modules 1–5 completed: full DB migration, IngredientsView (yield+cost), SubRecipesView (builder+cost), RecipesView (margin calc), all wired into Index.tsx |
+| 2026-05-21 | Fixed `Public/` → `public/` case bug (Vercel 404 on all static assets); deleted stale `index.lock`; confirmed `placeOrder` has `opts?` in main branch |
 

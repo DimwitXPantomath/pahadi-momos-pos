@@ -8,6 +8,8 @@ interface Vendor {
   name: string
   type: "online" | "offline"
   phone: string
+  address?: string
+  pin?: string
   shops?: VendorShop[]
 }
 
@@ -77,7 +79,7 @@ export default function VendorPricingView() {
   const [success, setSuccess] = useState("")
 
   // ── Vendor form ────────────────────────────────────────────────────────────
-  const [vForm, setVForm] = useState({ name: "", type: "offline" as "online" | "offline", phone: "" })
+  const [vForm, setVForm] = useState({ name: "", type: "offline" as "online" | "offline", phone: "", address: "", pin: "" })
   const [selectedVendor, setSelectedVendor] = useState<Vendor | null>(null)
   const [shopForm, setShopForm] = useState({ shop_name: "", city: "Bhopal", phone: "" })
 
@@ -133,11 +135,39 @@ export default function VendorPricingView() {
   // ── Vendor actions ─────────────────────────────────────────────────────────
   async function addVendor() {
     if (!vForm.name.trim()) { flash("Vendor name is required", true); return }
+    if (!vForm.address.trim()) { flash("Address is required", true); return }
+    if (!vForm.pin.trim()) { flash("PIN code is required", true); return }
     setSaving(true)
-    const { error: err } = await supabase.from("vendors")
-      .insert({ name: vForm.name.trim(), type: vForm.type, phone: vForm.phone, outlet_id: OUTLET_ID })
-    if (err) flash(err.message, true)
-    else { setVForm({ name: "", type: "offline", phone: "" }); flash("Vendor added"); load() }
+    const insertPayload: Record<string, string> = {
+      name: vForm.name.trim(),
+      type: vForm.type,
+      phone: vForm.phone,
+      address: vForm.address.trim(),
+      pin: vForm.pin.trim(),
+    }
+    // Only include outlet_id if the column exists — try without it first via upsert
+    const { data: inserted, error: err } = await supabase
+      .from("vendors")
+      .insert({ ...insertPayload, outlet_id: OUTLET_ID })
+      .select()
+      .single()
+
+    if (err) {
+      // If outlet_id column doesn't exist, retry without it
+      if (err.message?.includes("outlet_id") || err.code === "PGRST204" || err.code === "42703") {
+        const { error: err2 } = await supabase.from("vendors").insert(insertPayload)
+        if (err2) { flash(err2.message, true); setSaving(false); return }
+      } else {
+        flash(`Failed: ${err.message}`, true)
+        console.error("addVendor error:", err)
+        setSaving(false)
+        return
+      }
+    }
+    console.log("Vendor created:", inserted)
+    setVForm({ name: "", type: "offline", phone: "", address: "", pin: "" })
+    flash("Vendor added ✓")
+    load()
     setSaving(false)
   }
 
@@ -312,6 +342,18 @@ export default function VendorPricingView() {
                   onChange={e => setVForm(f => ({ ...f, phone: e.target.value }))} />
               </div>
             </div>
+            <div style={s.grid2}>
+              <div style={s.field}>
+                <label style={s.label}>Address * <span style={{ color: "#dc2626" }}>required</span></label>
+                <input style={s.input} placeholder="Street / area / landmark" value={vForm.address}
+                  onChange={e => setVForm(f => ({ ...f, address: e.target.value }))} />
+              </div>
+              <div style={s.field}>
+                <label style={s.label}>PIN Code * <span style={{ color: "#dc2626" }}>required</span></label>
+                <input style={s.input} placeholder="e.g. 462001" maxLength={6} value={vForm.pin}
+                  onChange={e => setVForm(f => ({ ...f, pin: e.target.value.replace(/\D/g, "") }))} />
+              </div>
+            </div>
             <div style={s.btnRow}>
               <button style={{ ...s.primaryBtn, opacity: saving ? 0.7 : 1 }}
                 onClick={addVendor} disabled={saving}>
@@ -338,6 +380,7 @@ export default function VendorPricingView() {
                         </span>
                       </div>
                       {vendor.phone && <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>📞 {vendor.phone}</div>}
+                      {vendor.address && <div style={{ fontSize: 12, color: "#6b7280" }}>📍 {vendor.address}{vendor.pin ? ` — ${vendor.pin}` : ""}</div>}
                     </div>
                     <div style={{ display: "flex", gap: 6 }}>
                       <button
