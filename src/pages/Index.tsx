@@ -23,7 +23,9 @@ import InventoryView from "@/components/inventory/InventoryView"
 import ProcurementView from "@/components/procurement/ProcurementView"
 import MISView from "@/components/mis/MISView"
 import LoyaltyView from "@/components/loyalty/LoyaltyView"
-import RecipesView from "@/components/recipes/RecipesView" // includes sub-recipes tab
+import IngredientsPage from "@/pages/IngredientsPage"
+import SubRecipesPage from "@/pages/SubRecipesPage"
+import RecipesPage from "@/pages/RecipesPage"
 
 const OUTLET_ID = "demo-outlet"
 
@@ -36,6 +38,8 @@ type View =
   | "analytics"
   | "menu_manage"
   | "settings"
+  | "ingredients"
+  | "subrecipes"
   | "reports"
   | "loyalty"
   | "inventory"
@@ -173,33 +177,8 @@ export default function Index() {
     }
   }, [settings.delayAlertMinutes, settings.soundAlert, alertedOrdersRef])
 
-  // ── Existing customers for DUE payment autocomplete ─────────────
-  const [existingCustomers, setExistingCustomers] = useState<{ phone: string; name: string }[]>([])
-
-  useEffect(() => {
-    const fetchCustomers = async () => {
-      const { data } = await supabase
-        .from("loyalty_transactions")
-        .select("customer_phone, customer_name")
-        .not("customer_phone", "eq", "walk-in")
-        .order("created_at", { ascending: false })
-      if (data) {
-        const unique = new Map<string, string>()
-        data.forEach((r: any) => { if (r.customer_phone && !unique.has(r.customer_phone)) unique.set(r.customer_phone, r.customer_name || "") })
-        setExistingCustomers(Array.from(unique.entries()).map(([phone, name]) => ({ phone, name })))
-      }
-    }
-    fetchCustomers()
-  }, [])
-
   // ── Place order ────────────────────────────────────────────────
-  const placeOrder = async (opts?: {
-    discount?: number; discountType?: string
-    cartNotes?: Record<string, string>; orderNotes?: string
-    payment?: string; dueAmount?: number
-    customerName?: string; customerPhone?: string
-    splitPayments?: Record<string, number>
-  }) => {
+  const placeOrder = async () => {
     if (cart.length === 0) { alert("Cart empty"); return }
     if (isPlacingOrder) return
     if (posMode === "TABLE_SERVICE" && !selectedTable) {
@@ -208,25 +187,20 @@ export default function Index() {
     }
     setIsPlacingOrder(true)
 
-    const discountAmount = opts?.discount ?? 0
-    const finalTotal = Math.max(0, grandTotal - discountAmount)
-    const effectivePayment = opts?.payment ?? paymentMethod
-
     const payload = {
       outlet_id: OUTLET_ID,
       items: cart,
       subtotal,
       gst,
-      discount: discountAmount,
-      total: finalTotal,
+      total: grandTotal,
       status: OrderStatus.PLACED,
-      payment_method: effectivePayment,
-      notes: opts?.orderNotes || orderNotes || null,
-      loyalty_points_earned: Math.floor(finalTotal / 100),
+      payment_method: paymentMethod,
+      loyalty_points_earned: Math.floor(grandTotal / 100),
       loyalty_points_used: 0,
       created_at: new Date().toISOString(),
       ...(selectedTable ? { table_id: selectedTable } : {}),
       ...(orderType ? { order_type: orderType } : {}),
+      ...(orderNotes ? { notes: orderNotes } : {}),
     }
 
     let data: any = null
@@ -260,26 +234,11 @@ export default function Index() {
     }))
     await supabase.from("order_items").insert(orderItemsPayload)
 
-    // ── Log credit/due sale ──────────────────────────────────────────
-    if (effectivePayment === "DUE") {
-      await supabase.from("credit_sales").insert({
-        order_id: data.id,
-        customer_name: opts?.customerName || "",
-        customer_phone: opts?.customerPhone || "",
-        due_amount: opts?.dueAmount ?? finalTotal,
-        paid_amount: 0,
-        status: "pending",
-        outlet_id: OUTLET_ID,
-      }).then(({ error }) => {
-        if (error) console.warn("Credit sale log error:", error.message)
-      })
-    }
-
     // ── Auto-earn loyalty points ────────────────────────────────────
     // Load loyalty settings for this outlet
     const { data: loyaltySettings } = await supabase
       .from("loyalty_settings")
-      .select("points_per_100")
+      .select("points_per_100, customer_phone_for_order")
       .eq("outlet_id", OUTLET_ID)
       .single()
 
@@ -290,8 +249,7 @@ export default function Index() {
     if (pointsEarned > 0) {
       await supabase.from("loyalty_transactions").insert({
         outlet_id: OUTLET_ID,
-        customer_phone: opts?.customerPhone || "walk-in",
-        customer_name: opts?.customerName || "",
+        customer_phone: "walk-in",
         type: "earned",
         points: pointsEarned,
         order_id: data.id,
@@ -559,7 +517,7 @@ export default function Index() {
               increaseQty={increaseQty}
               decreaseQty={decreaseQty}
               isPlacingOrder={isPlacingOrder}
-              onPlaceOrder={(opts) => placeOrder(opts)}
+              onPlaceOrder={placeOrder}
               posMode={posMode}
               selectedTable={selectedTable}
               orderType={orderType}
@@ -568,7 +526,6 @@ export default function Index() {
               setOrderNotes={setOrderNotes}
               printMode={printMode}
               setPrintMode={setPrintMode}
-              existingCustomers={existingCustomers}
             />
           </div>
         </div>
@@ -830,11 +787,15 @@ export default function Index() {
 
       )}
 
+      {view === "ingredients" && <IngredientsPage />}
+
       {view === "procurement" && <ProcurementView />}
 
       {view === "analytics" && <MISView />}
 
-      {view === "recipes" && <RecipesView />}
+      {view === "subrecipes" && <SubRecipesPage />}
+
+      {view === "recipes" && <RecipesPage />}
 
 
       {/* LOYALTY VIEW */}

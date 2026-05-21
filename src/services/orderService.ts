@@ -21,6 +21,7 @@ export const placeOrder = async ({
   gst,
   grandTotal,
   paymentMethod,
+  orders,
   tableId,
   orderType,
   orderNotes,
@@ -33,6 +34,7 @@ export const placeOrder = async ({
   gst: number
   grandTotal: number
   paymentMethod: "CASH" | "CARD" | "UPI"
+  orders: Order[]
   tableId?: string | null
   orderType?: "DINE_IN" | "TAKEAWAY"
   orderNotes?: string
@@ -42,24 +44,9 @@ export const placeOrder = async ({
 }) => {
   if (cart.length === 0) throw new Error("Cart is empty")
 
-  // Fetch the current MAX token_no from the DB for this outlet.
-  // This avoids the stale-client-state race where two concurrent orders
-  // both read orders.length at the same moment and get the same token.
-  // For bullet-proof uniqueness at high volume, replace with a DB sequence.
-  const outletId = getOutletId()
-  const { data: maxRow } = await supabase
-    .from("orders")
-    .select("token_no")
-    .eq("outlet_id", outletId)
-    .order("token_no", { ascending: false })
-    .limit(1)
-    .maybeSingle()
-
-  const nextToken = (maxRow?.token_no ?? 100) + 1
-
   const payload = {
-    outlet_id: outletId,
-    token_no: nextToken,
+    outlet_id: getOutletId(),
+    token_no: orders.length + 101,
     items: cart,
     subtotal,
     gst,
@@ -86,7 +73,7 @@ export const placeOrder = async ({
   // Insert order items
   const orderItemsPayload = cart.map(item => ({
     order_id: data.id,
-    outlet_id: outletId,
+    outlet_id: getOutletId(),
     item_id: item.id,
     quantity: item.quantity,
   }))

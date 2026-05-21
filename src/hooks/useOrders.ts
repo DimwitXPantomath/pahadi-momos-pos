@@ -40,11 +40,6 @@ export const useOrders = () => {
       .channel("orders-channel")
       .on("postgres_changes", { event: "*", schema: "public", table: "orders" }, (payload) => {
         const newOrder = payload.new as Order
-        // Skip old orders — only process today's
-        const todayStart = new Date()
-        todayStart.setHours(0, 0, 0, 0)
-        if (newOrder.created_at && new Date(newOrder.created_at) < todayStart) return
-
         if (payload.eventType === "INSERT") {
           setOrders(prev => prev.some(o => o.id === newOrder.id) ? prev : [newOrder, ...prev])
         }

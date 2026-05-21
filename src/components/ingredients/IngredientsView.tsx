@@ -3,29 +3,28 @@ import { supabase } from "@/lib/supabase"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type PurchaseUnit = "kg" | "litre" | "box" | "pcs" | "dozen" | "carton" | "bag"
-type UsageUnit = "g" | "ml" | "pcs" | "kg" | "litre" | "portion"
+type PurchaseUnit = "kg" | "litre" | "box" | "pcs"
+type UsageUnit = "g" | "ml" | "pcs"
 
 interface IngredientRow {
   id: string
   name: string
   unit: UsageUnit
   purchase_unit: PurchaseUnit
-  purchase_qty: number       // stored in usage units
+  purchase_qty: number
   purchase_cost: number
   processing_yield_pct: number
   cost_per_unit: number
   usable_qty: number
   wastage_qty: number
-  units_per_purchase: number // how many usage-unit per 1 purchase-unit
   created_at: string
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function calcYield(totalUsageQty: number, purchaseCost: number, yieldPct: number) {
-  const usable = totalUsageQty * (yieldPct / 100)
-  const wastage = totalUsageQty - usable
+function calcYield(purchaseQty: number, purchaseCost: number, yieldPct: number) {
+  const usable = purchaseQty * (yieldPct / 100)
+  const wastage = purchaseQty - usable
   const costPerUnit = usable > 0 ? purchaseCost / usable : 0
   return { usable, wastage, costPerUnit }
 }
@@ -38,14 +37,18 @@ function fmtCurrency(n: number) {
   return "₹" + fmt(n, 2)
 }
 
-// Suggest a sensible default units_per_purchase when purchase+usage unit changes
-function suggestConversion(pu: PurchaseUnit, uu: UsageUnit): number {
-  if (pu === "kg"    && uu === "g")      return 1000
-  if (pu === "litre" && uu === "ml")     return 1000
-  if (pu === "dozen" && uu === "pcs")    return 12
-  if (pu === "kg"    && uu === "kg")     return 1
-  if (pu === "litre" && uu === "litre")  return 1
-  return 0  // 0 = no suggestion, user must fill in
+// Convert purchase unit to base usage unit label
+function purchaseToUsageUnit(pu: PurchaseUnit): UsageUnit {
+  if (pu === "kg") return "g"
+  if (pu === "litre") return "ml"
+  return "pcs"
+}
+
+// Convert qty entered in purchase unit → base unit (g/ml)
+function toBaseQty(qty: number, purchaseUnit: PurchaseUnit): number {
+  if (purchaseUnit === "kg") return qty * 1000
+  if (purchaseUnit === "litre") return qty * 1000
+  return qty // pcs / box stay as-is
 }
 
 // ─── Empty Form State ─────────────────────────────────────────────────────────
@@ -53,8 +56,6 @@ function suggestConversion(pu: PurchaseUnit, uu: UsageUnit): number {
 const emptyForm = {
   name: "",
   purchaseUnit: "kg" as PurchaseUnit,
-  usageUnit: "g" as UsageUnit,
-  unitsPerPurchase: "1000",
   purchaseQty: "",
   purchaseCost: "",
   yieldPct: "100",
@@ -64,7 +65,6 @@ const emptyForm = {
 
 export default function IngredientsView() {
   const [form, setForm] = useState(emptyForm)
-  const [showAdvanced, setShowAdvanced] = useState(false)
   const [ingredients, setIngredients] = useState<IngredientRow[]>([])
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -75,31 +75,12 @@ export default function IngredientsView() {
   const [searchQuery, setSearchQuery] = useState("")
 
   // ── Live calculation ───────────────────────────────────────────────────────
-  const parsedQty      = parseFloat(form.purchaseQty) || 0
-  const parsedCost     = parseFloat(form.purchaseCost) || 0
-  const parsedYield    = parseFloat(form.yieldPct) || 100
-  const parsedUpp      = parseFloat(form.unitsPerPurchase) || 1
-  const totalUsageQty  = parsedQty * parsedUpp          // e.g. 1 box × 3000g = 3000g
-  const { usable, wastage, costPerUnit } = calcYield(totalUsageQty, parsedCost, parsedYield)
-
-  // When purchase or usage unit changes, auto-suggest the conversion factor
-  function handlePurchaseUnitChange(pu: PurchaseUnit) {
-    const suggested = suggestConversion(pu, form.usageUnit)
-    setForm(f => ({
-      ...f,
-      purchaseUnit: pu,
-      unitsPerPurchase: suggested > 0 ? String(suggested) : f.unitsPerPurchase,
-    }))
-  }
-
-  function handleUsageUnitChange(uu: UsageUnit) {
-    const suggested = suggestConversion(form.purchaseUnit, uu)
-    setForm(f => ({
-      ...f,
-      usageUnit: uu,
-      unitsPerPurchase: suggested > 0 ? String(suggested) : f.unitsPerPurchase,
-    }))
-  }
+  const parsedQty = parseFloat(form.purchaseQty) || 0
+  const parsedCost = parseFloat(form.purchaseCost) || 0
+  const parsedYield = parseFloat(form.yieldPct) || 0
+  const baseQty = toBaseQty(parsedQty, form.purchaseUnit)
+  const usageUnit = purchaseToUsageUnit(form.purchaseUnit)
+  const { usable, wastage, costPerUnit } = calcYield(baseQty, parsedCost, parsedYield)
 
   // ── Fetch ──────────────────────────────────────────────────────────────────
   async function fetchIngredients() {
@@ -117,26 +98,24 @@ export default function IngredientsView() {
 
   // ── Save ───────────────────────────────────────────────────────────────────
   async function handleSave() {
-    if (!form.name.trim())        { setError("Ingredient name is required"); return }
-    if (parsedQty <= 0)           { setError("Enter a valid quantity bought"); return }
-    if (parsedCost <= 0)          { setError("Enter a valid cost"); return }
-    if (parsedUpp <= 0)           { setError("Conversion (units per purchase) must be > 0"); return }
+    if (!form.name.trim()) { setError("Ingredient name is required"); return }
+    if (parsedQty <= 0) { setError("Enter a valid quantity"); return }
+    if (parsedCost <= 0) { setError("Enter a valid cost"); return }
     if (parsedYield <= 0 || parsedYield > 100) { setError("Yield must be 1–100%"); return }
 
     setSaving(true)
     setError("")
 
     const payload = {
-      name:                  form.name.trim(),
-      unit:                  form.usageUnit,
-      purchase_unit:         form.purchaseUnit,
-      units_per_purchase:    parsedUpp,
-      purchase_qty:          totalUsageQty,       // stored in usage units
-      purchase_cost:         parsedCost,
-      processing_yield_pct:  parsedYield,
-      cost_per_unit:         costPerUnit,
-      usable_qty:            usable,
-      wastage_qty:           wastage,
+      name: form.name.trim(),
+      unit: usageUnit,
+      purchase_unit: form.purchaseUnit,
+      purchase_qty: baseQty,
+      purchase_cost: parsedCost,
+      processing_yield_pct: parsedYield,
+      cost_per_unit: costPerUnit,
+      usable_qty: usable,
+      wastage_qty: wastage,
     }
 
     let err
@@ -151,7 +130,6 @@ export default function IngredientsView() {
     } else {
       setSuccess(editRow ? "Updated!" : "Ingredient added!")
       setForm(emptyForm)
-      setShowAdvanced(false)
       setEditRow(null)
       fetchIngredients()
       setTimeout(() => setSuccess(""), 2500)
@@ -168,25 +146,22 @@ export default function IngredientsView() {
 
   // ── Edit ───────────────────────────────────────────────────────────────────
   function startEdit(row: IngredientRow) {
-    const upp = row.units_per_purchase || 1
-    const displayQty = row.purchase_qty / upp   // reverse: usage_qty ÷ units_per_purchase
+    // Convert base qty back to purchase unit display qty
+    let displayQty = row.purchase_qty
+    if (row.purchase_unit === "kg" || row.purchase_unit === "litre") displayQty = row.purchase_qty / 1000
     setForm({
-      name:             row.name,
-      purchaseUnit:     row.purchase_unit,
-      usageUnit:        row.unit,
-      unitsPerPurchase: String(upp),
-      purchaseQty:      String(displayQty),
-      purchaseCost:     String(row.purchase_cost),
-      yieldPct:         String(row.processing_yield_pct),
+      name: row.name,
+      purchaseUnit: row.purchase_unit,
+      purchaseQty: String(displayQty),
+      purchaseCost: String(row.purchase_cost),
+      yieldPct: String(row.processing_yield_pct),
     })
-    setShowAdvanced(row.processing_yield_pct !== 100)
     setEditRow(row)
     window.scrollTo({ top: 0, behavior: "smooth" })
   }
 
   function cancelEdit() {
     setForm(emptyForm)
-    setShowAdvanced(false)
     setEditRow(null)
     setError("")
   }
@@ -202,7 +177,7 @@ export default function IngredientsView() {
       <div style={s.header}>
         <div>
           <h2 style={s.title}>🥕 Ingredients</h2>
-          <p style={s.subtitle}>Track raw material costs with purchase-to-usage conversion</p>
+          <p style={s.subtitle}>Track raw material costs with processing yield</p>
         </div>
         <div style={s.statPill}>
           {ingredients.length} ingredient{ingredients.length !== 1 ? "s" : ""}
@@ -215,13 +190,12 @@ export default function IngredientsView() {
           {editRow ? `✏️ Editing: ${editRow.name}` : "➕ Add Ingredient"}
         </h3>
 
-        {/* Row 1: Name + Purchase unit */}
         <div style={s.grid2}>
           <div style={s.field}>
             <label style={s.label}>Ingredient Name *</label>
             <input
               style={s.input}
-              placeholder="e.g. Milk, Mascarpone"
+              placeholder="e.g. Mascarpone Cheese"
               value={form.name}
               onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
             />
@@ -231,74 +205,24 @@ export default function IngredientsView() {
             <select
               style={s.input}
               value={form.purchaseUnit}
-              onChange={e => handlePurchaseUnitChange(e.target.value as PurchaseUnit)}
+              onChange={e => setForm(f => ({ ...f, purchaseUnit: e.target.value as PurchaseUnit }))}
             >
-              <option value="kg">kg</option>
-              <option value="litre">Litre</option>
-              <option value="box">Box</option>
-              <option value="dozen">Dozen</option>
-              <option value="carton">Carton</option>
-              <option value="bag">Bag</option>
+              <option value="kg">kg (→ g)</option>
+              <option value="litre">Litre (→ ml)</option>
+              <option value="box">Box (→ pcs)</option>
               <option value="pcs">Pcs</option>
             </select>
           </div>
         </div>
 
-        {/* Row 2: Usage unit + Conversion */}
-        <div style={s.grid2}>
-          <div style={s.field}>
-            <label style={s.label}>Usage Unit (in recipes) *</label>
-            <select
-              style={s.input}
-              value={form.usageUnit}
-              onChange={e => handleUsageUnitChange(e.target.value as UsageUnit)}
-            >
-              <option value="g">Grams (g)</option>
-              <option value="ml">Millilitres (ml)</option>
-              <option value="pcs">Pieces (pcs)</option>
-              <option value="kg">Kilograms (kg)</option>
-              <option value="litre">Litres</option>
-              <option value="portion">Portion</option>
-            </select>
-          </div>
-          <div style={s.field}>
-            <label style={s.label}>
-              {form.usageUnit} per {form.purchaseUnit} *{" "}
-              <span style={{ fontWeight: 400, color: "#9ca3af", textTransform: "none", letterSpacing: 0 }}>
-                (conversion)
-              </span>
-            </label>
-            <input
-              style={s.input}
-              type="number"
-              min="0.001"
-              step="any"
-              placeholder={`How many ${form.usageUnit} in 1 ${form.purchaseUnit}?`}
-              value={form.unitsPerPurchase}
-              onChange={e => setForm(f => ({ ...f, unitsPerPurchase: e.target.value }))}
-            />
-          </div>
-        </div>
-
-        {/* Conversion hint */}
-        {parsedUpp > 0 && (
-          <div style={s.hintStrip}>
-            💡 1 {form.purchaseUnit} = {fmt(parsedUpp, 3)} {form.usageUnit}
-            {parsedQty > 0 && (
-              <> · {fmt(parsedQty, 3)} {form.purchaseUnit} = <strong>{fmt(totalUsageQty, 1)} {form.usageUnit}</strong></>
-            )}
-          </div>
-        )}
-
-        {/* Row 3: Qty + Cost */}
-        <div style={s.grid2}>
+        <div style={s.grid3}>
           <div style={s.field}>
             <label style={s.label}>Qty Bought ({form.purchaseUnit}) *</label>
             <input
               style={s.input}
               type="number"
               min="0"
-              step="any"
+              step="0.01"
               placeholder={`e.g. 2 ${form.purchaseUnit}`}
               value={form.purchaseQty}
               onChange={e => setForm(f => ({ ...f, purchaseQty: e.target.value }))}
@@ -316,67 +240,42 @@ export default function IngredientsView() {
               onChange={e => setForm(f => ({ ...f, purchaseCost: e.target.value }))}
             />
           </div>
-        </div>
-
-        {/* Advanced: Processing Yield */}
-        <div style={{ marginBottom: 12 }}>
-          <button
-            type="button"
-            style={s.advancedToggle}
-            onClick={() => setShowAdvanced(v => !v)}
-          >
-            {showAdvanced ? "▾" : "▸"} Advanced — Processing Yield
-            <span style={{ marginLeft: 8, fontWeight: 400, color: "#9ca3af", fontSize: 12 }}>
-              {showAdvanced ? "" : `(currently ${form.yieldPct}% — skip if no waste)`}
-            </span>
-          </button>
-          {showAdvanced && (
-            <div style={{ marginTop: 8, maxWidth: 320 }}>
-              <div style={s.field}>
-                <label style={s.label}>Processing Yield %</label>
-                <input
-                  style={s.input}
-                  type="number"
-                  min="1"
-                  max="100"
-                  step="0.1"
-                  placeholder="e.g. 85 (leave 100 if no wastage)"
-                  value={form.yieldPct}
-                  onChange={e => setForm(f => ({ ...f, yieldPct: e.target.value }))}
-                />
-                <span style={{ fontSize: 11, color: "#9ca3af", marginTop: 4 }}>
-                  e.g. 85% means 15% lost in peeling/trimming. Leave at 100 if you use the full quantity.
-                </span>
-              </div>
-            </div>
-          )}
+          <div style={s.field}>
+            <label style={s.label}>Processing Yield %</label>
+            <input
+              style={s.input}
+              type="number"
+              min="1"
+              max="100"
+              step="0.1"
+              placeholder="e.g. 85"
+              value={form.yieldPct}
+              onChange={e => setForm(f => ({ ...f, yieldPct: e.target.value }))}
+            />
+          </div>
         </div>
 
         {/* Live calculation strip */}
-        {parsedQty > 0 && parsedCost > 0 && parsedUpp > 0 && (
+        {parsedQty > 0 && parsedCost > 0 && parsedYield > 0 && (
           <div style={s.calcStrip}>
             <div style={s.calcItem}>
-              <span style={s.calcLabel}>Total ({form.usageUnit})</span>
-              <span style={s.calcValue}>{fmt(totalUsageQty, 1)} {form.usageUnit}</span>
+              <span style={s.calcLabel}>Usable Qty</span>
+              <span style={s.calcValue}>{fmt(usable)} {usageUnit}</span>
             </div>
             <div style={s.calcDivider} />
             <div style={s.calcItem}>
-              <span style={s.calcLabel}>Usable</span>
-              <span style={{ ...s.calcValue, color: "#16a34a" }}>{fmt(usable, 1)} {form.usageUnit}</span>
+              <span style={s.calcLabel}>Wastage</span>
+              <span style={{ ...s.calcValue, color: "#ef4444" }}>{fmt(wastage)} {usageUnit}</span>
             </div>
-            {parsedYield < 100 && (
-              <>
-                <div style={s.calcDivider} />
-                <div style={s.calcItem}>
-                  <span style={s.calcLabel}>Wastage</span>
-                  <span style={{ ...s.calcValue, color: "#ef4444" }}>{fmt(wastage, 1)} {form.usageUnit}</span>
-                </div>
-              </>
-            )}
             <div style={s.calcDivider} />
             <div style={s.calcItem}>
-              <span style={s.calcLabel}>Cost / {form.usageUnit}</span>
+              <span style={s.calcLabel}>Cost per {usageUnit}</span>
               <span style={{ ...s.calcValue, color: "#16a34a" }}>{fmtCurrency(costPerUnit)}</span>
+            </div>
+            <div style={s.calcDivider} />
+            <div style={s.calcItem}>
+              <span style={s.calcLabel}>Yield</span>
+              <span style={s.calcValue}>{parsedYield}%</span>
             </div>
           </div>
         )}
@@ -421,53 +320,49 @@ export default function IngredientsView() {
             <table style={s.table}>
               <thead>
                 <tr>
-                  {["Name", "Buy Unit", "Qty Bought", "Usage Unit", "Total", "Cost (₹)", "Yield", "Usable", "₹/unit", ""].map(h => (
+                  {["Name","Buy Unit","Buy Qty","Cost","Yield %","Usable","Wastage","₹/unit",""].map(h => (
                     <th key={h} style={s.th}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((row, i) => {
-                  const upp = row.units_per_purchase || 1
-                  const displayQty = row.purchase_qty / upp
-                  return (
-                    <tr key={row.id} style={{ background: i % 2 === 0 ? "white" : "#f9fafb" }}>
-                      <td style={{ ...s.td, fontWeight: 600 }}>{row.name}</td>
-                      <td style={s.td}>{row.purchase_unit}</td>
-                      <td style={{ ...s.td, textAlign: "right" }}>
-                        {fmt(displayQty, 2)} {row.purchase_unit}
-                      </td>
-                      <td style={s.td}>
-                        <span style={s.unitPill}>{row.unit}</span>
-                      </td>
-                      <td style={{ ...s.td, textAlign: "right" }}>
-                        {fmt(row.purchase_qty, 1)} {row.unit}
-                      </td>
-                      <td style={{ ...s.td, textAlign: "right" }}>{fmtCurrency(row.purchase_cost)}</td>
-                      <td style={{ ...s.td, textAlign: "right" }}>
-                        <span style={{
-                          ...s.badge,
-                          background: row.processing_yield_pct >= 90 ? "#dcfce7" : row.processing_yield_pct >= 70 ? "#fef9c3" : "#fee2e2",
-                          color: row.processing_yield_pct >= 90 ? "#166534" : row.processing_yield_pct >= 70 ? "#854d0e" : "#991b1b",
-                        }}>
-                          {row.processing_yield_pct}%
-                        </span>
-                      </td>
-                      <td style={{ ...s.td, textAlign: "right", color: "#16a34a", fontWeight: 600 }}>
-                        {fmt(row.usable_qty, 1)} {row.unit}
-                      </td>
-                      <td style={{ ...s.td, textAlign: "right", fontWeight: 700 }}>
-                        {fmtCurrency(row.cost_per_unit)}
-                      </td>
-                      <td style={s.td}>
-                        <div style={{ display: "flex", gap: 6 }}>
-                          <button style={s.editBtn} onClick={() => startEdit(row)}>✏️</button>
-                          <button style={s.deleteBtn} onClick={() => setDeleteId(row.id)}>🗑️</button>
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
+                {filtered.map((row, i) => (
+                  <tr key={row.id} style={{ background: i % 2 === 0 ? "white" : "#f9fafb" }}>
+                    <td style={{ ...s.td, fontWeight: 600 }}>{row.name}</td>
+                    <td style={s.td}>{row.purchase_unit}</td>
+                    <td style={{ ...s.td, textAlign: "right" }}>
+                      {fmt(row.purchase_unit === "kg" || row.purchase_unit === "litre"
+                        ? row.purchase_qty / 1000
+                        : row.purchase_qty
+                      )} {row.purchase_unit}
+                    </td>
+                    <td style={{ ...s.td, textAlign: "right" }}>{fmtCurrency(row.purchase_cost)}</td>
+                    <td style={{ ...s.td, textAlign: "right" }}>
+                      <span style={{
+                        ...s.badge,
+                        background: row.processing_yield_pct >= 90 ? "#dcfce7" : row.processing_yield_pct >= 70 ? "#fef9c3" : "#fee2e2",
+                        color: row.processing_yield_pct >= 90 ? "#166534" : row.processing_yield_pct >= 70 ? "#854d0e" : "#991b1b",
+                      }}>
+                        {row.processing_yield_pct}%
+                      </span>
+                    </td>
+                    <td style={{ ...s.td, textAlign: "right", color: "#16a34a", fontWeight: 600 }}>
+                      {fmt(row.usable_qty)} {row.unit}
+                    </td>
+                    <td style={{ ...s.td, textAlign: "right", color: "#ef4444" }}>
+                      {fmt(row.wastage_qty)} {row.unit}
+                    </td>
+                    <td style={{ ...s.td, textAlign: "right", fontWeight: 700 }}>
+                      {fmtCurrency(row.cost_per_unit)}
+                    </td>
+                    <td style={s.td}>
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <button style={s.editBtn} onClick={() => startEdit(row)}>✏️</button>
+                        <button style={s.deleteBtn} onClick={() => setDeleteId(row.id)}>🗑️</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
@@ -557,6 +452,12 @@ const s: Record<string, React.CSSProperties> = {
     gap: 12,
     marginBottom: 12,
   },
+  grid3: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr 1fr",
+    gap: 12,
+    marginBottom: 12,
+  },
   field: {
     display: "flex",
     flexDirection: "column",
@@ -580,26 +481,6 @@ const s: Record<string, React.CSSProperties> = {
     outline: "none",
     width: "100%",
     boxSizing: "border-box",
-  },
-  hintStrip: {
-    background: "#eff6ff",
-    border: "1px solid #bfdbfe",
-    borderRadius: 8,
-    padding: "8px 14px",
-    fontSize: 13,
-    color: "#1e40af",
-    marginBottom: 12,
-  },
-  advancedToggle: {
-    background: "none",
-    border: "none",
-    cursor: "pointer",
-    fontSize: 13,
-    fontWeight: 600,
-    color: "#6b7280",
-    padding: 0,
-    display: "flex",
-    alignItems: "center",
   },
   calcStrip: {
     display: "flex",
@@ -708,15 +589,6 @@ const s: Record<string, React.CSSProperties> = {
   },
   badge: {
     display: "inline-block",
-    padding: "2px 8px",
-    borderRadius: 20,
-    fontSize: 12,
-    fontWeight: 700,
-  },
-  unitPill: {
-    display: "inline-block",
-    background: "#ede9fe",
-    color: "#6d28d9",
     padding: "2px 8px",
     borderRadius: 20,
     fontSize: 12,

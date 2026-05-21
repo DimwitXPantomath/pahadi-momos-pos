@@ -38,7 +38,7 @@ export default function OrderTracking() {
   // Register service worker on mount
   useEffect(() => {
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/sw.js").catch(console.error)
+      navigator.serviceWorker.register("/firebase-messaging-sw.js").catch(console.error)
     }
     // FCM for background push when phone is locked
     requestFCMPermission()

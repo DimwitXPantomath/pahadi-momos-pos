@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react"
 import { supabase } from "@/lib/supabase"
 
 type Ingredient = { id: string; name: string; unit: string }
-type Vendor = { id: string; name: string; phone: string; address?: string; pin?: string }
+type Vendor = { id: string; name: string; phone: string }
 type ProcurementRequest = {
   id: string; status: string; created_at: string; note: string
   vendor_id: string | null; vendors?: Vendor
@@ -54,8 +54,6 @@ export default function ProcurementView() {
   // New vendor form
   const [vName, setVName] = useState("")
   const [vPhone, setVPhone] = useState("")
-  const [vAddress, setVAddress] = useState("")
-  const [vPin, setVPin] = useState("")
 
   const load = useCallback(async () => {
     const [{ data: r }, { data: v }, { data: i }] = await Promise.all([
@@ -140,23 +138,9 @@ export default function ProcurementView() {
   }
 
   const addVendor = async () => {
-    if (!vName.trim()) { alert("Vendor name is required"); return }
-    if (!vAddress.trim()) { alert("Address is required"); return }
-    if (!vPin.trim()) { alert("PIN code is required"); return }
-
-    const { error } = await supabase.from("vendors").insert({
-      name: vName.trim(),
-      phone: vPhone.trim(),
-      address: vAddress.trim(),
-      pin: vPin.trim(),
-    })
-
-    if (error) {
-      alert("Could not add vendor: " + error.message)
-      return
-    }
-
-    setVName(""); setVPhone(""); setVAddress(""); setVPin("")
+    if (!vName.trim()) return
+    await supabase.from("vendors").insert({ name: vName, phone: vPhone })
+    setVName(""); setVPhone("")
     load()
   }
 
@@ -347,38 +331,19 @@ export default function ProcurementView() {
         <div>
           <div style={s.card}>
             <h3 style={s.cardTitle}>Add Vendor</h3>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
-              <div>
-                <label style={{ fontSize: 11, fontWeight: 600, color: "#374151", display: "block", marginBottom: 4 }}>Vendor Name *</label>
-                <input placeholder="e.g. Fresh Farms" value={vName} onChange={e => setVName(e.target.value)} style={s.input} />
-              </div>
-              <div>
-                <label style={{ fontSize: 11, fontWeight: 600, color: "#374151", display: "block", marginBottom: 4 }}>Phone</label>
-                <input placeholder="e.g. 9876543210" value={vPhone} onChange={e => setVPhone(e.target.value)} style={s.input} />
-              </div>
-              <div>
-                <label style={{ fontSize: 11, fontWeight: 600, color: "#374151", display: "block", marginBottom: 4 }}>Address *</label>
-                <input placeholder="Street address" value={vAddress} onChange={e => setVAddress(e.target.value)} style={s.input} />
-              </div>
-              <div>
-                <label style={{ fontSize: 11, fontWeight: 600, color: "#374151", display: "block", marginBottom: 4 }}>PIN Code *</label>
-                <input placeholder="e.g. 452001" value={vPin} onChange={e => setVPin(e.target.value)} style={s.input} />
-              </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input placeholder="Vendor name" value={vName} onChange={e => setVName(e.target.value)} style={{ ...s.input, flex: 1 }} />
+              <input placeholder="Phone" value={vPhone} onChange={e => setVPhone(e.target.value)} style={{ ...s.input, width: 160 }} />
+              <button onClick={addVendor} style={s.btn}>Add</button>
             </div>
-            <button onClick={addVendor} style={s.btn}>Add Vendor</button>
           </div>
           <div style={s.card}>
             <table style={s.table}>
-              <thead><tr><th style={s.th}>Name</th><th style={s.th}>Phone</th><th style={s.th}>Address</th><th style={s.th}>PIN</th></tr></thead>
+              <thead><tr><th style={s.th}>Name</th><th style={s.th}>Phone</th></tr></thead>
               <tbody>
-                {vendors.length === 0 && <tr><td colSpan={4} style={{ ...s.td, textAlign: "center", color: "#9ca3af", padding: "20px" }}>No vendors yet</td></tr>}
+                {vendors.length === 0 && <tr><td colSpan={2} style={{ ...s.td, textAlign: "center", color: "#9ca3af", padding: "20px" }}>No vendors yet</td></tr>}
                 {vendors.map(v => (
-                  <tr key={v.id}>
-                    <td style={s.td}>{v.name}</td>
-                    <td style={s.td}>{v.phone || "—"}</td>
-                    <td style={s.td}>{v.address || "—"}</td>
-                    <td style={s.td}>{v.pin || "—"}</td>
-                  </tr>
+                  <tr key={v.id}><td style={s.td}>{v.name}</td><td style={s.td}>{v.phone || "—"}</td></tr>
                 ))}
               </tbody>
             </table>
