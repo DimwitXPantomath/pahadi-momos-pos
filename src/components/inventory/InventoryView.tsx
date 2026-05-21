@@ -313,7 +313,7 @@ export default function InventoryView() {
               <table style={s.table}>
                 <thead>
                   <tr>
-                    {["Item Name", "Category", "In Stock", "Reorder At", "Status", ""].map(h => (
+                    {["Item Name", "Category", "Stock Level", "In Stock", "Reorder At", "High Level", "Status", ""].map(h => (
                       <th key={h} style={s.th}>{h}</th>
                     ))}
                   </tr>
@@ -333,11 +333,34 @@ export default function InventoryView() {
                             {CAT_LABELS[item.category]}
                           </span>
                         </td>
+                        <td style={{ ...s.td, minWidth: 120 }}>
+                          {(() => {
+                            const high = item.reorder_level * 5 || 100
+                            const pct = Math.min(100, (item.current_qty / high) * 100)
+                            const barColor = isOut ? "#ef4444" : isLow ? "#f59e0b" : "#16a34a"
+                            return (
+                              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                <span style={{ fontSize: 10, color: "#9ca3af", minWidth: 14 }}>0</span>
+                                <div style={{ flex: 1, background: "#f3f4f6", borderRadius: 4, height: 8, position: "relative" }}>
+                                  <div style={{ width: `${pct}%`, background: barColor, height: "100%", borderRadius: 4, transition: "width .3s" }} />
+                                  {/* Low marker */}
+                                  {item.reorder_level > 0 && (
+                                    <div style={{ position: "absolute", left: `${(item.reorder_level / high) * 100}%`, top: -2, width: 2, height: 12, background: "#f97316" }} title="Low stock level" />
+                                  )}
+                                </div>
+                                <span style={{ fontSize: 10, color: "#9ca3af", minWidth: 14 }}>{item.reorder_level * 5 || 100}</span>
+                              </div>
+                            )
+                          })()}
+                        </td>
                         <td style={{ ...s.td, textAlign: "right", fontWeight: 700, fontFamily: "monospace" }}>
                           {fmt(item.current_qty, 1)} {item.unit}
                         </td>
-                        <td style={{ ...s.td, textAlign: "right", color: "#6b7280" }}>
+                        <td style={{ ...s.td, textAlign: "right", color: "#f97316" }}>
                           {item.reorder_level > 0 ? `${fmt(item.reorder_level, 1)} ${item.unit}` : "—"}
+                        </td>
+                        <td style={{ ...s.td, textAlign: "right", color: "#6b7280" }}>
+                          {item.reorder_level > 0 ? `${fmt(item.reorder_level * 5, 0)} ${item.unit}` : "—"}
                         </td>
                         <td style={s.td}>
                           {isOut ? (
@@ -435,6 +458,51 @@ export default function InventoryView() {
               />
             </div>
           </div>
+
+          {/* Ingredient costing fields — shown when category is ingredient */}
+          {addForm.category === "ingredient" && (
+            <div style={{ background: "#f9f7f4", borderRadius: 8, padding: "12px 16px", marginBottom: 12, border: "1px solid #e5e7eb" }}>
+              <p style={{ fontSize: 12, fontWeight: 700, color: "#374151", margin: "0 0 10px" }}>📊 Costing Details (optional but recommended)</p>
+              <div style={s.grid3}>
+                <div style={s.field}>
+                  <label style={s.label}>Purchase Unit</label>
+                  <select style={s.input} value={addForm.purchaseUnit || "kg"} onChange={e => setAddForm(f => ({ ...f, purchaseUnit: e.target.value }))}>
+                    {["Kg", "Bottle", "Pack", "Box", "Packet", "Liter", "Tray", "Can", "Dozen"].map(u => <option key={u} value={u}>{u}</option>)}
+                  </select>
+                </div>
+                <div style={s.field}>
+                  <label style={s.label}>Cost Per Purchase Unit (₹)</label>
+                  <input style={s.input} type="number" placeholder="e.g. 200" value={addForm.costPerUnit || ""} onChange={e => setAddForm(f => ({ ...f, costPerUnit: e.target.value }))} />
+                </div>
+                <div style={s.field}>
+                  <label style={s.label}>Units Per Purchase</label>
+                  <input style={s.input} type="number" placeholder="e.g. 1000 (grams in 1 kg)" value={addForm.unitsPerPurchase || ""} onChange={e => setAddForm(f => ({ ...f, unitsPerPurchase: e.target.value }))} />
+                </div>
+                <div style={s.field}>
+                  <label style={s.label}>Yield % (default 100)</label>
+                  <input style={s.input} type="number" placeholder="e.g. 95" value={addForm.yieldPct || "100"} onChange={e => setAddForm(f => ({ ...f, yieldPct: e.target.value }))} />
+                </div>
+                <div style={s.field}>
+                  <label style={s.label}>Max Stock Level</label>
+                  <input style={s.input} type="number" placeholder="High level alert" value={addForm.maxLevel || ""} onChange={e => setAddForm(f => ({ ...f, maxLevel: e.target.value }))} />
+                </div>
+                <div style={{ ...s.field, justifyContent: "flex-end" }}>
+                  {addForm.costPerUnit && addForm.unitsPerPurchase && (
+                    <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 6, padding: "8px 10px", fontSize: 12 }}>
+                      <p style={{ margin: 0, color: "#374151" }}>
+                        Cost per {addForm.unit}: <strong style={{ color: "#16a34a" }}>
+                          ₹{((Number(addForm.costPerUnit) / (Number(addForm.unitsPerPurchase) * (Number(addForm.yieldPct || 100) / 100))) || 0).toFixed(4)}
+                        </strong>
+                      </p>
+                      <p style={{ margin: "2px 0 0", color: "#9ca3af", fontSize: 10 }}>
+                        = ₹{addForm.costPerUnit} ÷ ({addForm.unitsPerPurchase} × {addForm.yieldPct || 100}%)
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
 
           <div style={s.btnRow}>
             <button

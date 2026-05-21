@@ -23,9 +23,7 @@ import InventoryView from "@/components/inventory/InventoryView"
 import ProcurementView from "@/components/procurement/ProcurementView"
 import MISView from "@/components/mis/MISView"
 import LoyaltyView from "@/components/loyalty/LoyaltyView"
-import IngredientsView from "@/components/ingredients/IngredientsView"
-import SubRecipesView from "@/components/subrecipes/SubRecipesView"
-import RecipesView from "@/components/recipes/RecipesView"
+import RecipesView from "@/components/recipes/RecipesView" // includes sub-recipes tab
 
 const OUTLET_ID = "demo-outlet"
 
@@ -38,8 +36,6 @@ type View =
   | "analytics"
   | "menu_manage"
   | "settings"
-  | "ingredients"
-  | "subrecipes"
   | "reports"
   | "loyalty"
   | "inventory"
@@ -177,16 +173,27 @@ export default function Index() {
     }
   }, [settings.delayAlertMinutes, settings.soundAlert, alertedOrdersRef])
 
+  // ── Existing customers for DUE payment autocomplete ─────────────
+  const [existingCustomers, setExistingCustomers] = useState<{ phone: string; name: string }[]>([])
+
+  useEffect(() => {
+    const fetchCustomers = async () => {
+      const { data } = await supabase
+        .from("loyalty_transactions")
+        .select("customer_phone, customer_name")
+        .not("customer_phone", "eq", "walk-in")
+        .order("created_at", { ascending: false })
+      if (data) {
+        const unique = new Map<string, string>()
+        data.forEach((r: any) => { if (r.customer_phone && !unique.has(r.customer_phone)) unique.set(r.customer_phone, r.customer_name || "") })
+        setExistingCustomers(Array.from(unique.entries()).map(([phone, name]) => ({ phone, name })))
+      }
+    }
+    fetchCustomers()
+  }, [])
+
   // ── Place order ────────────────────────────────────────────────
-  const placeOrder = async (opts?: {
-    discount?: number
-    discountType?: string
-    cartNotes?: Record<string, string>
-    orderNotes?: string
-    payment?: string
-    dueAmount?: number
-    customerName?: string
-  }) => {
+  const placeOrder = async () => {
     if (cart.length === 0) { alert("Cart empty"); return }
     if (isPlacingOrder) return
     if (posMode === "TABLE_SERVICE" && !selectedTable) {
@@ -195,26 +202,20 @@ export default function Index() {
     }
     setIsPlacingOrder(true)
 
-    const discountAmount = opts?.discount ?? 0
-    const finalTotal = Math.max(0, grandTotal - discountAmount)
-    const effectivePayment = (opts?.payment ?? paymentMethod) as string
-
     const payload = {
       outlet_id: OUTLET_ID,
       items: cart,
       subtotal,
       gst,
-      discount: discountAmount,
-      total: finalTotal,
+      total: grandTotal,
       status: OrderStatus.PLACED,
-      payment_method: effectivePayment === "DUE" ? "DUE" : effectivePayment,
-      notes: opts?.orderNotes || orderNotes || null,
+      payment_method: paymentMethod,
       loyalty_points_earned: Math.floor(grandTotal / 100),
       loyalty_points_used: 0,
       created_at: new Date().toISOString(),
       ...(selectedTable ? { table_id: selectedTable } : {}),
       ...(orderType ? { order_type: orderType } : {}),
-
+      ...(orderNotes ? { notes: orderNotes } : {}),
     }
 
     let data: any = null
@@ -248,20 +249,6 @@ export default function Index() {
     }))
     await supabase.from("order_items").insert(orderItemsPayload)
 
-    // ── Log credit sale if DUE ────────────────────────────────────────
-    if (effectivePayment === "DUE") {
-      await supabase.from("credit_sales").insert({
-        order_id: data.id,
-        customer_name: opts?.customerName || "",
-        due_amount: opts?.dueAmount ?? finalTotal,
-        paid_amount: 0,
-        status: "pending",
-        outlet_id: OUTLET_ID,
-      }).then(({ error }) => {
-        if (error) console.warn("Credit sale log error:", error.message)
-      })
-    }
-
     // ── Auto-earn loyalty points ────────────────────────────────────
     // Load loyalty settings for this outlet
     const { data: loyaltySettings } = await supabase
@@ -277,7 +264,8 @@ export default function Index() {
     if (pointsEarned > 0) {
       await supabase.from("loyalty_transactions").insert({
         outlet_id: OUTLET_ID,
-        customer_phone: "walk-in",
+        customer_phone: opts?.customerPhone || "walk-in",
+        customer_name: opts?.customerName || "",
         type: "earned",
         points: pointsEarned,
         order_id: data.id,
@@ -492,14 +480,15 @@ export default function Index() {
     <main style={{
       marginTop: 56,
       minHeight: "calc(100vh - 56px)",
-      padding: "16px",
-      width: "100%",
-      boxSizing: "border-box" as const,
+      padding: "24px 16px",
+      maxWidth: 1200,
+      marginLeft: "auto",
+      marginRight: "auto",
     }}>
 
       {/* ── MENU VIEW ──────────────────────────────────────────── */}
       {view === "menu" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 0, height: "calc(100vh - 104px)", overflow: "hidden" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 0, height: "calc(100vh - 80px)" }}>
 
           {features.tables && (
             <TableSelector
@@ -516,7 +505,7 @@ export default function Index() {
             </div>
           )}
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr minmax(260px, 320px)", gap: 16, flex: 1, minHeight: 0, overflow: "hidden" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: 16, flex: 1, minHeight: 0 }}>
             <MenuGrid
               menuItems={menuItems}
               categories={categories}
@@ -544,7 +533,7 @@ export default function Index() {
               increaseQty={increaseQty}
               decreaseQty={decreaseQty}
               isPlacingOrder={isPlacingOrder}
-              onPlaceOrder={(opts) => placeOrder(opts)}
+              onPlaceOrder={placeOrder}
               posMode={posMode}
               selectedTable={selectedTable}
               orderType={orderType}
@@ -553,6 +542,7 @@ export default function Index() {
               setOrderNotes={setOrderNotes}
               printMode={printMode}
               setPrintMode={setPrintMode}
+              existingCustomers={existingCustomers}
             />
           </div>
         </div>
@@ -814,13 +804,9 @@ export default function Index() {
 
       )}
 
-      {view === "ingredients" && <IngredientsView />}
-
       {view === "procurement" && <ProcurementView />}
 
       {view === "analytics" && <MISView />}
-
-      {view === "subrecipes" && <SubRecipesView />}
 
       {view === "recipes" && <RecipesView />}
 
@@ -904,26 +890,48 @@ export default function Index() {
       {view === "inventory" && <InventoryView />}
 
       {/* QR MODAL */}
-      {qrOrderId && (() => {
-        const qrOrder = orders.find(o => o.id === qrOrderId)
-        return (
+      {qrOrderId && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.6)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 100,
+          }}
+          onClick={() => setQrOrderId(null)}
+        >
           <div
-            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}
-            onClick={() => setQrOrderId(null)}
+            style={{
+              background: "white",
+              padding: 24,
+              borderRadius: 12,
+              textAlign: "center",
+            }}
+            onClick={(e) => e.stopPropagation()}
           >
-            <div style={{ background: "white", padding: 28, borderRadius: 16, textAlign: "center", maxWidth: 320, width: "100%" }} onClick={e => e.stopPropagation()}>
-              <h3 style={{ margin: "0 0 16px", fontSize: 18, fontWeight: 800 }}>🎟️ Token #{qrOrder?.token_no || "—"}</h3>
-              <QRCode value={`${window.location.origin}/order/${qrOrderId}`} size={180} />
-              <p style={{ marginTop: 12, fontSize: 13, color: "#6b7280" }}>Customer scans this to track their order</p>
-              <p style={{ fontSize: 12, color: "#9ca3af", marginTop: 4 }}>QR expires when order is collected</p>
-              <button
-                onClick={() => setQrOrderId(null)}
-                style={{ marginTop: 16, padding: "10px 32px", background: "#111", color: "white", border: "none", borderRadius: 8, fontWeight: 600, fontSize: 14, cursor: "pointer" }}
-              >Close</button>
-            </div>
+            <h3>Scan to Track Order</h3>
+
+            <QRCode
+              value={`${window.location.origin}/order/${qrOrderId}`}
+              size={200}
+            />
+
+            <p style={{ marginTop: 10 }}>
+            Token #{orders.find(o => o.id === qrOrderId)?.token_no || "-"}
+          </p>
+
+            <button
+              onClick={() => setQrOrderId(null)}
+              style={{ marginTop: 12 }}
+            >
+              Close
+            </button>
           </div>
-        )
-      })()}
+        </div>
+      )}
         <audio
           ref={audioRef}
           src="/notification.mp3"

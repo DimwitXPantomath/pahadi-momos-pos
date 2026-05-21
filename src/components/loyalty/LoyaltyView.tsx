@@ -44,7 +44,10 @@ export default function LoyaltyView() {
     value_per_point: 0.5,
     min_redeem: 100,
   })
+  const [activeTab, setActiveTab] = useState<"overview" | "customers" | "settings">("overview")
   const [activity, setActivity] = useState<LoyaltyActivity[]>([])
+  const [customers, setCustomers] = useState<any[]>([])
+  const [customerSearch, setCustomerSearch] = useState("")
   const [stats, setStats] = useState({ customers: 0, issued: 0, redeemed: 0 })
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -68,6 +71,34 @@ export default function LoyaltyView() {
       .limit(20)
 
     if (activityData) setActivity(activityData)
+
+    // Load customer analytics
+    const { data: custData } = await supabase
+      .from("loyalty_transactions")
+      .select("customer_phone, customer_name, type, points, created_at")
+      .eq("outlet_id", OUTLET_ID)
+      .order("created_at", { ascending: false })
+
+    if (custData) {
+      // Group by phone
+      const map: Record<string, any> = {}
+      custData.forEach(r => {
+        if (!map[r.customer_phone]) {
+          map[r.customer_phone] = {
+            phone: r.customer_phone,
+            name: r.customer_name || "",
+            visits: 0, totalPoints: 0, lastVisit: r.created_at,
+            firstVisit: r.created_at,
+          }
+        }
+        if (r.type === "earned") {
+          map[r.customer_phone].visits++
+          map[r.customer_phone].totalPoints += r.points
+        }
+        if (r.created_at > map[r.customer_phone].lastVisit) map[r.customer_phone].lastVisit = r.created_at
+      })
+      setCustomers(Object.values(map).sort((a, b) => b.totalPoints - a.totalPoints))
+    }
 
     // Load stats
     const { data: statsData } = await supabase
@@ -106,6 +137,15 @@ export default function LoyaltyView() {
         <h2 style={s.title}>Loyalty Points</h2>
         <p style={s.subtitle}>Manage your customer loyalty program</p>
       </div>
+
+      {/* Tabs */}
+      <div style={{ display: "flex", gap: 0, background: "#f3f4f6", borderRadius: 10, padding: 4, marginBottom: 20, width: "fit-content" }}>
+        {([["overview", "📊 Overview"], ["customers", "👥 Customers"], ["settings", "⚙️ Settings"]] as const).map(([key, label]) => (
+          <button key={key} onClick={() => setActiveTab(key)} style={{ padding: "7px 20px", borderRadius: 8, border: "none", cursor: "pointer", fontWeight: 600, fontSize: 13, background: activeTab === key ? "white" : "transparent", color: activeTab === key ? "#111" : "#6b7280", boxShadow: activeTab === key ? "0 1px 4px rgba(0,0,0,0.08)" : "none" }}>{label}</button>
+        ))}
+      </div>
+
+      {activeTab === "overview" && <>
 
       {/* QR Code */}
       <div style={s.card}>
@@ -187,7 +227,7 @@ export default function LoyaltyView() {
         <h3 style={s.cardTitle}>📋 Recent Activity</h3>
         {activity.length === 0 ? (
           <p style={{ color: "#9ca3af", fontSize: 14, textAlign: "center", padding: "20px 0" }}>
-            No activity yet — customers will appear here after scanning and earning points
+            No activity yet
           </p>
         ) : (
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -219,6 +259,68 @@ export default function LoyaltyView() {
           </table>
         )}
       </div>
+
+      </>}
+
+      {/* CUSTOMERS TAB */}
+      {activeTab === "customers" && (
+        <div>
+          <div style={{ ...s.card, marginBottom: 16 }}>
+            <input placeholder="🔍 Search by phone or name..." value={customerSearch} onChange={e => setCustomerSearch(e.target.value)}
+              style={{ width: "100%", padding: "8px 12px", border: "1.5px solid #e5e7eb", borderRadius: 8, fontSize: 13, outline: "none" }} />
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12, marginBottom: 16 }}>
+            <div style={s.statCard}><div style={{ fontSize: 22, fontWeight: 800, color: "#111" }}>{customers.length}</div><div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>Total Customers</div></div>
+            <div style={s.statCard}><div style={{ fontSize: 22, fontWeight: 800, color: "#111" }}>{customers.filter(c => { const d = new Date(c.lastVisit); const now = new Date(); return (now.getTime() - d.getTime()) < 7 * 86400000 }).length}</div><div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>Active (last 7d)</div></div>
+            <div style={s.statCard}><div style={{ fontSize: 22, fontWeight: 800, color: "#111" }}>{customers.filter(c => c.visits >= 5).length}</div><div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>Regular (5+ visits)</div></div>
+          </div>
+          <div style={s.card}>
+            <table style={{ width: "100%", borderCollapse: "collapse" as const }}>
+              <thead>
+                <tr>{["Customer", "Phone", "Visits", "Points", "Last Visit", "Segment"].map(h => <th key={h} style={{ textAlign: "left" as const, padding: "8px 12px", fontSize: 12, fontWeight: 600, color: "#6b7280", borderBottom: "1px solid #e5e7eb" }}>{h}</th>)}</tr>
+              </thead>
+              <tbody>
+                {customers.filter(c => !customerSearch || c.phone.includes(customerSearch) || c.name?.toLowerCase().includes(customerSearch.toLowerCase())).map((c, i) => {
+                  const daysSinceVisit = Math.floor((Date.now() - new Date(c.lastVisit).getTime()) / 86400000)
+                  const segment = c.visits >= 10 ? "🔥 VIP" : c.visits >= 5 ? "⭐ Regular" : c.visits >= 2 ? "👍 Occasional" : "🆕 New"
+                  const segColor = c.visits >= 10 ? "#dc2626" : c.visits >= 5 ? "#d97706" : c.visits >= 2 ? "#16a34a" : "#6b7280"
+                  return (
+                    <tr key={c.phone} style={{ background: i % 2 === 0 ? "white" : "#f9fafb" }}>
+                      <td style={{ padding: "8px 12px", fontSize: 13, fontWeight: 600, borderBottom: "1px solid #f3f4f6" }}>{c.name || "—"}</td>
+                      <td style={{ padding: "8px 12px", fontSize: 13, borderBottom: "1px solid #f3f4f6" }}>
+                        <a href={`https://wa.me/${c.phone.replace(/\D/g,"")}?text=${encodeURIComponent(`Hi ${c.name || ""}! You have ${c.totalPoints} loyalty points at Praang. Visit us again!`)}`} target="_blank" style={{ color: "#25d366", textDecoration: "none" }}>📱 {c.phone}</a>
+                      </td>
+                      <td style={{ padding: "8px 12px", fontSize: 13, fontWeight: 700, borderBottom: "1px solid #f3f4f6" }}>{c.visits}</td>
+                      <td style={{ padding: "8px 12px", fontSize: 13, color: "#f97316", fontWeight: 700, borderBottom: "1px solid #f3f4f6" }}>⭐ {c.totalPoints}</td>
+                      <td style={{ padding: "8px 12px", fontSize: 12, color: "#6b7280", borderBottom: "1px solid #f3f4f6" }}>{daysSinceVisit === 0 ? "Today" : `${daysSinceVisit}d ago`}</td>
+                      <td style={{ padding: "8px 12px", fontSize: 12, fontWeight: 600, color: segColor, borderBottom: "1px solid #f3f4f6" }}>{segment}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* SETTINGS TAB */}
+      {activeTab === "settings" && (
+        <div>
+          {/* existing settings content */}
+          <div style={s.card}>
+            <h3 style={s.cardTitle}>⚙️ Points Settings</h3>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
+              <div><label style={s.label}>Points per ₹100 spent</label><input type="number" value={loyaltySettings.points_per_100} onChange={e => setLoyaltySettings(prev => ({ ...prev, points_per_100: Number(e.target.value) }))} style={s.input} /></div>
+              <div><label style={s.label}>₹ value per point</label><input type="number" step={0.1} value={loyaltySettings.value_per_point} onChange={e => setLoyaltySettings(prev => ({ ...prev, value_per_point: Number(e.target.value) }))} style={s.input} /></div>
+            </div>
+            <div style={{ marginBottom: 16 }}><label style={s.label}>Minimum points to redeem</label><input type="number" value={loyaltySettings.min_redeem} onChange={e => setLoyaltySettings(prev => ({ ...prev, min_redeem: Number(e.target.value) }))} style={{ ...s.input, maxWidth: 200 }} /></div>
+            <div style={{ background: "#f9f7f4", borderRadius: 8, padding: "12px 16px", marginBottom: 16, fontSize: 13 }}>
+              💡 Customer spending ₹500 earns <strong>{Math.floor(500 / 100 * loyaltySettings.points_per_100)} points</strong> worth <strong>₹{(Math.floor(500 / 100 * loyaltySettings.points_per_100) * loyaltySettings.value_per_point).toFixed(2)}</strong>
+            </div>
+            <button onClick={saveSettings} disabled={saving} style={{ ...s.btn, opacity: saving ? 0.7 : 1, background: saved ? "#16a34a" : "#111" }}>{saving ? "Saving..." : saved ? "✓ Saved!" : "Save Settings"}</button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
