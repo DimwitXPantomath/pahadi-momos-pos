@@ -54,14 +54,27 @@ export default function SubRecipesView() {
   const [success, setSuccess] = useState("")
   const [showForm, setShowForm] = useState(false)
 
-  const [srForm, setSrForm] = useState({ name: "", yield_qty: "1", unit: "g", description: "" })
+  // ── Create form — yield qty/unit moved to bottom, optional ────────────────
+  const [srForm, setSrForm] = useState({
+    name: "",
+    description: "",
+    unit: "g",
+    yield_qty: "",         // optional — will auto-calculate from ingredients if blank
+  })
   const [addForm, setAddForm] = useState({ ingredient_id: "", quantity: "", yield_percent: "100" })
+
+  // ── Yield override in builder (per-session, not persisted unless "Save" is clicked) ─
+  const [yieldOverride, setYieldOverride] = useState<string>("")
+  const [savingYield, setSavingYield] = useState(false)
 
   // ── Fetchers ───────────────────────────────────────────────────────────────
 
   const fetchSubRecipes = useCallback(async () => {
     setLoading(true)
-    const { data, error } = await supabase.from("sub_recipes").select("*").order("name")
+    const { data, error } = await supabase
+      .from("sub_recipes")
+      .select("*")
+      .order("name")
     if (error) setError(error.message)
     else setSubRecipes(data || [])
     setLoading(false)
@@ -102,15 +115,26 @@ export default function SubRecipesView() {
   }, [])
 
   useEffect(() => { fetchSubRecipes(); fetchIngredients() }, [fetchSubRecipes, fetchIngredients])
-  useEffect(() => { if (selected) fetchItems(selected.id); else setItems([]) }, [selected, fetchItems])
+  useEffect(() => {
+    if (selected) {
+      fetchItems(selected.id)
+      setYieldOverride("")  // reset override when switching sub-recipe
+    } else {
+      setItems([])
+    }
+  }, [selected, fetchItems])
 
   // ── Computed ───────────────────────────────────────────────────────────────
 
   const totalCost = items.reduce((sum, i) => sum + i.line_cost, 0)
-  // Total weight = sum of all input quantities (what actually goes into the sub-recipe)
-  const totalInputWeight = items.reduce((sum, i) => sum + i.quantity, 0)
-  // Cost per gram/unit = total cost of ingredients used ÷ total weight of sub-recipe created
-  const costPerYieldUnit = totalInputWeight > 0 ? totalCost / totalInputWeight : 0
+  // Auto-calculated yield = sum of all INPUT quantities
+  const autoYield = items.reduce((sum, i) => sum + i.quantity, 0)
+  // If user has typed an override, use that; otherwise use auto
+  const effectiveYield = parseFloat(yieldOverride) > 0
+    ? parseFloat(yieldOverride)
+    : autoYield
+  // Cost per yield unit
+  const costPerYieldUnit = effectiveYield > 0 ? totalCost / effectiveYield : 0
 
   const previewQty = parseFloat(addForm.quantity) || 0
   const previewYield = parseFloat(addForm.yield_percent) || 100
@@ -124,13 +148,21 @@ export default function SubRecipesView() {
   async function handleCreate() {
     if (!srForm.name.trim()) { setError("Name is required"); return }
     setSaving(true); setError("")
+    // yield_qty must be > 0 (DB constraint). Use entered value or default 1.
+    const yieldQty = parseFloat(srForm.yield_qty) > 0 ? parseFloat(srForm.yield_qty) : 1
     const { data, error } = await supabase
       .from("sub_recipes")
-      .insert({ name: srForm.name.trim(), yield_qty: parseFloat(srForm.yield_qty), unit: srForm.unit, description: srForm.description })
+      .insert({
+        name: srForm.name.trim(),
+        yield_qty: yieldQty,
+        unit: srForm.unit,
+        description: srForm.description,
+        outlet_id: "demo-outlet",
+      })
       .select().single()
     if (error) { setError(error.message); setSaving(false); return }
     setSuccess("Sub recipe created!")
-    setSrForm({ name: "", yield_qty: "1", unit: "g", description: "" })
+    setSrForm({ name: "", description: "", unit: "g", yield_qty: "" })
     setShowForm(false)
     await fetchSubRecipes()
     setSelected(data)
@@ -159,6 +191,25 @@ export default function SubRecipesView() {
     fetchItems(selected.id)
     setTimeout(() => setSuccess(""), 2000)
     setSaving(false)
+  }
+
+  async function handleSaveYield() {
+    if (!selected) return
+    const yq = parseFloat(yieldOverride)
+    if (!yq || yq <= 0) { setError("Enter a valid yield quantity > 0"); return }
+    setSavingYield(true)
+    const { error } = await supabase
+      .from("sub_recipes")
+      .update({ yield_qty: yq })
+      .eq("id", selected.id)
+    if (error) { setError(error.message) }
+    else {
+      setSelected(prev => prev ? { ...prev, yield_qty: yq } : prev)
+      setSubRecipes(prev => prev.map(sr => sr.id === selected.id ? { ...sr, yield_qty: yq } : sr))
+      setSuccess("Yield saved!")
+      setTimeout(() => setSuccess(""), 2000)
+    }
+    setSavingYield(false)
   }
 
   async function handleDeleteItem(id: string) {
@@ -194,10 +245,12 @@ export default function SubRecipesView() {
       {error && <div style={s.errorBanner}>⚠️ {error}</div>}
       {success && <div style={s.successBanner}>✅ {success}</div>}
 
-      {/* Create form */}
+      {/* Create form — Name & Description first, yield qty/unit at bottom */}
       {showForm && (
         <div style={s.card}>
           <div style={s.cardTitle}>➕ New Sub Recipe</div>
+
+          {/* Row 1: Name + Description */}
           <div style={s.grid2}>
             <div style={s.field}>
               <label style={s.label}>Name *</label>
@@ -210,13 +263,9 @@ export default function SubRecipesView() {
                 onChange={e => setSrForm(f => ({ ...f, description: e.target.value }))} />
             </div>
           </div>
-          <div style={s.grid2}>
-            <div style={s.field}>
-              <label style={s.label}>Batch Yield Quantity *</label>
-              <input style={s.input} type="number" min="0.01" step="0.01"
-                placeholder="How much this batch produces" value={srForm.yield_qty}
-                onChange={e => setSrForm(f => ({ ...f, yield_qty: e.target.value }))} />
-            </div>
+
+          {/* Row 2 (bottom): Yield unit + Yield qty — optional */}
+          <div style={{ ...s.grid2, marginTop: 4 }}>
             <div style={s.field}>
               <label style={s.label}>Yield Unit</label>
               <select style={s.input} value={srForm.unit}
@@ -229,7 +278,15 @@ export default function SubRecipesView() {
                 <option value="kg">Kilograms (kg)</option>
               </select>
             </div>
+            <div style={s.field}>
+              <label style={s.label}>Batch Yield Qty <span style={{ fontWeight: 400, color: "#9ca3af" }}>(optional — auto from ingredients)</span></label>
+              <input style={s.input} type="number" min="0.01" step="0.01"
+                placeholder="Leave blank to auto-calculate"
+                value={srForm.yield_qty}
+                onChange={e => setSrForm(f => ({ ...f, yield_qty: e.target.value }))} />
+            </div>
           </div>
+
           <div style={s.btnRow}>
             <button style={{ ...s.primaryBtn, opacity: saving ? 0.7 : 1 }}
               onClick={handleCreate} disabled={saving}>
@@ -258,7 +315,7 @@ export default function SubRecipesView() {
                 <div style={{ flex: 1 }}>
                   <div style={{ fontWeight: 700, fontSize: 14 }}>{sr.name}</div>
                   <div style={{ fontSize: 12, opacity: 0.6, marginTop: 2 }}>
-                    Yields {fmt(sr.yield_qty, 1)} {sr.unit}
+                    {sr.yield_qty > 1 ? `Yields ${fmt(sr.yield_qty, 1)} ${sr.unit}` : `Unit: ${sr.unit}`}
                     {sr.description ? ` · ${sr.description}` : ""}
                   </div>
                 </div>
@@ -288,8 +345,7 @@ export default function SubRecipesView() {
                 <div>
                   <div style={{ fontSize: 17, fontWeight: 800 }}>{selected.name}</div>
                   <div style={{ fontSize: 13, color: "#6b7280", marginTop: 2 }}>
-                    Batch yields {fmt(selected.yield_qty, 1)} {selected.unit}
-                    {selected.description ? ` · ${selected.description}` : ""}
+                    {selected.description || "No description"}
                   </div>
                 </div>
                 <div style={s.costBox}>
@@ -298,13 +354,60 @@ export default function SubRecipesView() {
                   <div style={{ fontSize: 12, color: "#16a34a", fontWeight: 700 }}>
                     {fmtCurrency(costPerYieldUnit)} / {selected.unit}
                   </div>
-                  {totalInputWeight > 0 && (
-                    <div style={{ fontSize: 10, color: "#9ca3af", marginTop: 2 }}>
-                      ÷ {fmt(totalInputWeight, 1)} {selected.unit} input
-                    </div>
-                  )}
                 </div>
               </div>
+
+              {/* Yield calculator strip — always visible when ingredients exist */}
+              {items.length > 0 && (
+                <div style={s.yieldStrip}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                    <div>
+                      <div style={{ fontSize: 10, color: "#6b7280", fontWeight: 700, textTransform: "uppercase" }}>
+                        Auto-calculated yield
+                      </div>
+                      <div style={{ fontSize: 15, fontWeight: 800, color: "#2563eb" }}>
+                        {fmt(autoYield, 1)} {selected.unit}
+                      </div>
+                      <div style={{ fontSize: 10, color: "#9ca3af" }}>sum of all input quantities</div>
+                    </div>
+                    <div style={{ fontSize: 20, color: "#d1d5db" }}>→</div>
+                    <div style={{ flex: 1, minWidth: 160 }}>
+                      <div style={{ fontSize: 10, color: "#6b7280", fontWeight: 700, textTransform: "uppercase" }}>
+                        Override actual yield <span style={{ fontWeight: 400 }}>(if batch reduces)</span>
+                      </div>
+                      <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 4 }}>
+                        <input
+                          type="number" min="0.01" step="0.01"
+                          placeholder={`e.g. ${fmt(autoYield * 0.85, 0)}`}
+                          value={yieldOverride}
+                          onChange={e => setYieldOverride(e.target.value)}
+                          style={{ ...s.input, height: 34, fontSize: 13, flex: 1 }}
+                        />
+                        <span style={{ fontSize: 12, color: "#6b7280", whiteSpace: "nowrap" }}>{selected.unit}</span>
+                        {yieldOverride && parseFloat(yieldOverride) > 0 && (
+                          <button
+                            onClick={handleSaveYield}
+                            disabled={savingYield}
+                            style={{ ...s.primaryBtn, height: 34, padding: "0 12px", fontSize: 12, opacity: savingYield ? 0.7 : 1 }}>
+                            {savingYield ? "…" : "Save"}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontSize: 10, color: "#6b7280", fontWeight: 700, textTransform: "uppercase" }}>
+                        Using {parseFloat(yieldOverride) > 0 ? "override" : "auto"}
+                      </div>
+                      <div style={{ fontSize: 15, fontWeight: 800, color: "#16a34a" }}>
+                        {fmt(effectiveYield, 1)} {selected.unit}
+                      </div>
+                      <div style={{ fontSize: 11, color: "#16a34a" }}>
+                        {fmtCurrency(costPerYieldUnit)} / {selected.unit}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Add ingredient */}
               <div style={{ padding: "14px 18px", borderBottom: "1px solid #f3f4f6" }}>
@@ -395,13 +498,21 @@ export default function SubRecipesView() {
                         </tr>
                       ))}
                       <tr style={{ background: "#f0fdf4", borderTop: "2px solid #bbf7d0" }}>
-                        <td colSpan={6} style={{ ...s.td, fontWeight: 700 }}>Total · {items.length} ingredient{items.length !== 1 ? "s" : ""}</td>
-                        <td style={{ ...s.td, textAlign: "right", fontWeight: 800, fontSize: 16, color: "#16a34a" }}>{fmtCurrency(totalCost)}</td>
+                        <td colSpan={6} style={{ ...s.td, fontWeight: 700 }}>
+                          Total · {items.length} ingredient{items.length !== 1 ? "s" : ""}
+                        </td>
+                        <td style={{ ...s.td, textAlign: "right", fontWeight: 800, fontSize: 16, color: "#16a34a" }}>
+                          {fmtCurrency(totalCost)}
+                        </td>
                         <td style={s.td} />
                       </tr>
                       <tr style={{ background: "#f0fdf4" }}>
-                        <td colSpan={6} style={{ ...s.td, color: "#6b7280", fontSize: 13 }}>Cost per {selected.unit} of {selected.name}</td>
-                        <td style={{ ...s.td, textAlign: "right", fontWeight: 800, color: "#16a34a" }}>{fmtCurrency(costPerYieldUnit)}/{selected.unit}</td>
+                        <td colSpan={6} style={{ ...s.td, color: "#6b7280", fontSize: 13 }}>
+                          Cost per {selected.unit} · using {parseFloat(yieldOverride) > 0 ? `override ${fmt(parseFloat(yieldOverride), 1)}` : `auto ${fmt(autoYield, 1)}`} {selected.unit}
+                        </td>
+                        <td style={{ ...s.td, textAlign: "right", fontWeight: 800, color: "#16a34a" }}>
+                          {fmtCurrency(costPerYieldUnit)}/{selected.unit}
+                        </td>
                         <td style={s.td} />
                       </tr>
                     </tbody>
@@ -433,6 +544,7 @@ const s: Record<string, React.CSSProperties> = {
   builderHead: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", padding: "16px 18px", background: "#f9fafb", borderBottom: "1px solid #f3f4f6", gap: 16 },
   costBox: { textAlign: "right", flexShrink: 0 },
   emptyBuilder: { display: "flex", flexDirection: "column", alignItems: "center", padding: "80px 20px", color: "#9ca3af" },
+  yieldStrip: { background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 0, borderLeft: "none", borderRight: "none", padding: "12px 18px", fontSize: 13 },
   card: { background: "white", border: "1px solid #e5e7eb", borderRadius: 12, padding: 20, marginBottom: 16 },
   cardTitle: { fontSize: 14, fontWeight: 700, color: "#111", marginBottom: 12 },
   grid2: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 },

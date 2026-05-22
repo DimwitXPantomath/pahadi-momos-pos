@@ -144,8 +144,12 @@ export const useOrders = () => {
 
   // ── Timer — stops when collected ─────────────────────────────────
   const getOrderTime = (createdAt: string, closedAt?: string | null) => {
-    const created = new Date(createdAt).getTime()
-    const end = closedAt ? new Date(closedAt).getTime() : Date.now()
+    // Supabase returns timestamps without timezone suffix (no 'Z').
+    // JS Date treats those as LOCAL time in the browser — IST adds 5h30m = 330 min offset.
+    // Force UTC by appending 'Z' when no tz info is present.
+    const toUTC = (s: string) => new Date(/[Z+]/.test(s) ? s : s + "Z")
+    const created = toUTC(createdAt).getTime()
+    const end = closedAt ? toUTC(closedAt).getTime() : Date.now()
     const diff = Math.floor((end - created) / 1000)
     // Cap at 24h to avoid showing crazy numbers for old test orders
     if (diff < 0 || diff > 86400) return "—"

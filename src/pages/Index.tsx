@@ -199,6 +199,11 @@ export default function Index() {
     const finalTotal = Math.max(0, grandTotal - discountAmount)
     const effectivePayment = opts?.payment ?? paymentMethod
 
+    // For SPLIT: encode breakdown as "SPLIT:CASH100+UPI50" so MIS/reports can parse it
+    const splitLabel = opts?.splitPayments && Object.keys(opts.splitPayments).length > 0
+      ? "SPLIT:" + Object.entries(opts.splitPayments).map(([k, v]) => `${k}${Math.round(v)}`).join("+")
+      : null
+
     const payload = {
       outlet_id: OUTLET_ID,
       items: cart,
@@ -207,7 +212,7 @@ export default function Index() {
       discount: discountAmount,
       total: finalTotal,
       status: OrderStatus.PLACED,
-      payment_method: effectivePayment,
+      payment_method: splitLabel ?? effectivePayment,
       notes: opts?.orderNotes || orderNotes || null,
       loyalty_points_earned: Math.floor(finalTotal / 100),
       loyalty_points_used: 0,
