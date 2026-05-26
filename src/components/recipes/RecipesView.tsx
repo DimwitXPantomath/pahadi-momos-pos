@@ -13,7 +13,8 @@ interface Ingredient {
   id: string
   name: string
   unit: string
-  cost_per_unit: number
+  cost_per_unit: number         // budget price per purchase unit (display only)
+  cost_per_usage_unit: number   // cost per gram/ml/piece — used for recipe costing
 }
 
 interface SubRecipe {
@@ -82,7 +83,7 @@ export default function RecipesView() {
 
     const [miRes, ingRes, srRes, recRes] = await Promise.all([
       supabase.from("menu_items").select("id, name, price").order("name"),
-      supabase.from("ingredients").select("id, name, unit, cost_per_unit").order("name"),
+      supabase.from("ingredients").select("id, name, unit, cost_per_unit, cost_per_usage_unit").order("name"),
       supabase.from("sub_recipes").select("id, name, yield_qty, unit").order("name"),
       supabase.from("recipes").select("id, menu_item_id, serves").order("created_at", { ascending: false }),
     ])
@@ -120,13 +121,14 @@ export default function RecipesView() {
       data.map(async (row: any) => {
         if (row.ingredient_id) {
           const ing = ingredients.find(i => i.id === row.ingredient_id)
-          const lineCost = (ing?.cost_per_unit ?? 0) * row.quantity
+          const costPerUsageUnit = ing?.cost_per_usage_unit ?? ing?.cost_per_unit ?? 0
+          const lineCost = costPerUsageUnit * row.quantity
           return {
             id: row.id, recipe_id: row.recipe_id, type: "ingredient" as const,
             ref_id: row.ingredient_id,
             ref_name: ing?.name ?? "Unknown",
             ref_unit: ing?.unit ?? "",
-            ref_cost_per_unit: ing?.cost_per_unit ?? 0,
+            ref_cost_per_unit: costPerUsageUnit,
             quantity: row.quantity,
             line_cost: lineCost,
           }
@@ -136,12 +138,13 @@ export default function RecipesView() {
           // Fetch sub recipe total cost
           const { data: srItems } = await supabase
             .from("sub_recipe_items")
-            .select("quantity, yield_percent, ingredients(cost_per_unit)")
+            .select("quantity, yield_percent, ingredients(cost_per_unit, cost_per_usage_unit)")
             .eq("sub_recipe_id", row.sub_recipe_id)
 
           let srTotalCost = 0
           ;(srItems || []).forEach((si: any) => {
-            srTotalCost += (si.ingredients?.cost_per_unit ?? 0) * si.quantity
+            const cpu = si.ingredients?.cost_per_usage_unit ?? si.ingredients?.cost_per_unit ?? 0
+            srTotalCost += cpu * si.quantity
           })
           const srCostPerUnit = sr && sr.yield_qty > 0 ? srTotalCost / sr.yield_qty : 0
           const lineCost = srCostPerUnit * row.quantity
@@ -418,7 +421,7 @@ export default function RecipesView() {
                       {lineType === "ingredient"
                         ? ingredients.map(i => (
                           <option key={i.id} value={i.id}>
-                            {i.name} ({i.unit}) · {fmtCurrency(i.cost_per_unit)}/{i.unit}
+                            {i.name} ({i.unit}) · {fmtCurrency(i.cost_per_usage_unit > 0 ? i.cost_per_usage_unit : i.cost_per_unit)}/{i.unit}
                           </option>
                         ))
                         : subRecipes.map(sr => (
@@ -448,7 +451,7 @@ export default function RecipesView() {
                       <>
                         <span style={{ color: "#6b7280" }}>Line cost: </span>
                         <strong style={{ color: "#16a34a" }}>
-                          {fmtCurrency((ingredients.find(i => i.id === lineForm.ref_id)?.cost_per_unit ?? 0) * previewQty)}
+                          {fmtCurrency(((ing => ing?.cost_per_usage_unit ?? ing?.cost_per_unit ?? 0)(ingredients.find(i => i.id === lineForm.ref_id))) * previewQty)}
                         </strong>
                       </>
                     ) : (

@@ -7,45 +7,72 @@ import {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type PurchaseUnit = "Kg" | "Litre" | "Bottle" | "Box" | "Pack" | "Packet" | "Tray" | "Can" | "Dozen" | "Piece"
+type PurchaseUnit = "Kg" | "Litre" | "Bottle" | "Box" | "Pack" | "Packet" | "Tray" | "Can"
 type UsageUnit   = "grams" | "ml" | "pieces"
+type AdjType     = "add" | "remove" | "set"
 
 interface IngredientRow {
-  id: string; name: string; unit: string; created_at: string
-  // New columns (added by migration 005)
-  purchase_unit: string | null; units_per_purchase: number | null
-  yield_percentage: number | null; usage_unit: string | null
-  min_stock_level: number | null; cost_per_usage_unit: number | null
-  last_purchase_cost: number | null
-  // Legacy columns (from original schema — kept for backward compat)
-  processing_yield_pct: number | null
-  purchase_qty: number | null; purchase_cost: number | null
-  cost_per_unit: number | null
+  id: string
+  name: string
+  unit: string
+  purchase_unit: string
+  cost_per_unit: number          // budget/standard price per purchase unit
+  last_purchase_cost: number     // actual price paid last time
+  yield_percentage: number
+  usage_unit: string
+  units_per_purchase: number
+  cost_per_usage_unit: number    // AUTO CALCULATED — read only
+  min_stock_level: number
+  preferred_vendor_id: string | null
+  current_stock: number
+  created_at: string
+}
+
+interface Vendor {
+  id: string
+  name: string
 }
 
 interface PriceHistoryRow {
-  id: string; purchase_date: string
-  quantity_received: number; total_cost: number
+  id: string
+  purchase_date: string
+  quantity_received: number
+  total_cost: number
   cost_per_usage_unit: number
-  vendor_id: string; vendor_name: string
+  vendor_id: string
+  vendor_name: string
+}
+
+interface StockRow {
+  ingredientId: string
+  qty: string
+  type: AdjType
+  note: string
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const PURCHASE_UNITS: PurchaseUnit[] = [
-  "Kg", "Litre", "Bottle", "Box", "Pack", "Packet", "Tray", "Can", "Dozen", "Piece",
+  "Kg", "Litre", "Bottle", "Box", "Pack", "Packet", "Tray", "Can",
 ]
 const USAGE_UNITS: UsageUnit[] = ["grams", "ml", "pieces"]
 const VENDOR_COLORS = ["#f97316", "#3b82f6", "#10b981", "#8b5cf6", "#ec4899"]
 
 const emptyForm = {
-  name:             "",
-  purchaseUnit:     "Kg" as PurchaseUnit,
-  unitsPerPurchase: "",
-  usageUnit:        "grams" as UsageUnit,
-  yieldPct:         "100",
-  minStockLevel:    "",
+  name:               "",
+  purchaseUnit:       "Kg" as PurchaseUnit,
+  costPerUnit:        "",       // ₹ per purchase unit (standard budget price)
+  lastPurchaseCost:   "",       // actual last paid
+  yieldPct:           "100",
+  usageUnit:          "grams" as UsageUnit,
+  unitsPerPurchase:   "",       // how many usage-units per 1 purchase unit
+  minStockLevel:      "",
+  preferredVendorId:  "",
 }
+
+const emptyStockRow = (): StockRow => ({
+  ingredientId: "", qty: "", type: "add", note: "",
+})
 
 function fmt(n: number, d = 2) {
   return n.toLocaleString("en-IN", { maximumFractionDigits: d })
@@ -54,30 +81,36 @@ function fmt(n: number, d = 2) {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function IngredientsView() {
-  const [form, setForm]           = useState(emptyForm)
-  const [ingredients, setIngredients] = useState<IngredientRow[]>([])
-  const [loading, setLoading]     = useState(false)
-  const [saving, setSaving]       = useState(false)
-  const [error, setError]         = useState("")
-  const [success, setSuccess]     = useState("")
-  const [deleteId, setDeleteId]   = useState<string | null>(null)
-  const [editRow, setEditRow]     = useState<IngredientRow | null>(null)
-  const [searchQuery, setSearchQuery] = useState("")
+  const [tab, setTab] = useState<"list" | "add" | "stock">("list")
+  const [form, setForm]                   = useState(emptyForm)
+  const [editRow, setEditRow]             = useState<IngredientRow | null>(null)
+  const [ingredients, setIngredients]     = useState<IngredientRow[]>([])
+  const [vendors, setVendors]             = useState<Vendor[]>([])
+  const [loading, setLoading]             = useState(false)
+  const [saving, setSaving]               = useState(false)
+  const [error, setError]                 = useState("")
+  const [success, setSuccess]             = useState("")
+  const [deleteId, setDeleteId]           = useState<string | null>(null)
+  const [searchQuery, setSearchQuery]     = useState("")
 
-  // Price history
-  const [historyIng, setHistoryIng]         = useState<IngredientRow | null>(null)
-  const [priceHistory, setPriceHistory]     = useState<PriceHistoryRow[]>([])
+  // Stock update tab
+  const [stockRows, setStockRows]         = useState<StockRow[]>([emptyStockRow()])
+  const [stockSaving, setStockSaving]     = useState(false)
+
+  // Price history modal
+  const [historyIng, setHistoryIng]       = useState<IngredientRow | null>(null)
+  const [priceHistory, setPriceHistory]   = useState<PriceHistoryRow[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
 
-  // ── Live calculation ───────────────────────────────────────────────────────
-  const parsedUnits    = parseFloat(form.unitsPerPurchase) || 0
-  const parsedYield    = parseFloat(form.yieldPct) || 0
-  const parsedMinStock = parseFloat(form.minStockLevel) || 0
-  const usable         = parsedUnits > 0 && parsedYield > 0 ? parsedUnits * (parsedYield / 100) : 0
-  const wastage        = parsedUnits - usable
-  const showPreview    = parsedUnits > 0
+  // ── Live calculation (Tab 2 preview) ──────────────────────────────────────
+  const parsedCPU  = parseFloat(form.costPerUnit)        || 0
+  const parsedUPP  = parseFloat(form.unitsPerPurchase)   || 0
+  const parsedYld  = parseFloat(form.yieldPct)           || 0
+  const usable     = parsedUPP > 0 && parsedYld > 0 ? parsedUPP * (parsedYld / 100) : 0
+  const calcCostPerUsageUnit = parsedCPU > 0 && usable > 0 ? parsedCPU / usable : 0
+  const showPreview = parsedUPP > 0 && parsedCPU > 0
 
-  // ── Fetch ingredients ──────────────────────────────────────────────────────
+  // ── Fetch ──────────────────────────────────────────────────────────────────
   async function fetchIngredients() {
     setLoading(true)
     const { data, error } = await supabase
@@ -89,9 +122,11 @@ export default function IngredientsView() {
     setLoading(false)
   }
 
-  useEffect(() => { fetchIngredients() }, [])
+  async function fetchVendors() {
+    const { data } = await supabase.from("vendors").select("id, name").order("name")
+    setVendors(data || [])
+  }
 
-  // ── Fetch price history ────────────────────────────────────────────────────
   async function fetchHistory(ing: IngredientRow) {
     setHistoryIng(ing)
     setPriceHistory([])
@@ -110,34 +145,31 @@ export default function IngredientsView() {
     setHistoryLoading(false)
   }
 
-  // ── Save ───────────────────────────────────────────────────────────────────
+  useEffect(() => { fetchIngredients(); fetchVendors() }, [])
+
+  // ── Save (Add / Edit) ──────────────────────────────────────────────────────
   async function handleSave() {
     if (!form.name.trim())              { setError("Ingredient name is required"); return }
-    if (parsedUnits <= 0)               { setError("Enter how many units per purchase (e.g. 570)"); return }
-    if (parsedYield <= 0 || parsedYield > 100) { setError("Yield must be 1–100%"); return }
+    if (parsedUPP <= 0)                 { setError("Enter units per purchase (e.g. 570)"); return }
+    if (parsedYld <= 0 || parsedYld > 100) { setError("Yield must be 1–100%"); return }
 
-    setSaving(true)
-    setError("")
+    setSaving(true); setError("")
 
     const payload = {
-      name:              form.name.trim(),
-      purchase_unit:     form.purchaseUnit,
-      units_per_purchase: parsedUnits,
-      usage_unit:        form.usageUnit,
-      unit:              form.usageUnit,        // keep legacy `unit` in sync
-      yield_percentage:  parsedYield,
-      min_stock_level:   parsedMinStock || 0,
-      cost_per_usage_unit: editRow?.cost_per_usage_unit ?? 0,
-      // Legacy columns — set safe defaults so NOT NULL constraints don't fire
-      processing_yield_pct: parsedYield,
-      purchase_qty:      parsedUnits,
-      purchase_cost:     0,
-      cost_per_unit:     0,
-      usable_qty:        usable,
-      wastage_qty:       wastage,
+      name:               form.name.trim(),
+      purchase_unit:      form.purchaseUnit,
+      cost_per_unit:      parsedCPU,
+      last_purchase_cost: parseFloat(form.lastPurchaseCost) || 0,
+      yield_percentage:   parsedYld,
+      usage_unit:         form.usageUnit,
+      unit:               form.usageUnit,   // keep legacy unit column in sync
+      units_per_purchase: parsedUPP,
+      cost_per_usage_unit: calcCostPerUsageUnit,
+      min_stock_level:    parseFloat(form.minStockLevel) || 0,
+      preferred_vendor_id: form.preferredVendorId || null,
     }
 
-    let err
+    let err: any
     if (editRow) {
       ;({ error: err } = await supabase.from("ingredients").update(payload).eq("id", editRow.id))
     } else {
@@ -151,7 +183,7 @@ export default function IngredientsView() {
       setForm(emptyForm)
       setEditRow(null)
       fetchIngredients()
-      setTimeout(() => setSuccess(""), 2500)
+      setTimeout(() => { setSuccess(""); setTab("list") }, 1200)
     }
     setSaving(false)
   }
@@ -166,25 +198,74 @@ export default function IngredientsView() {
   // ── Edit ───────────────────────────────────────────────────────────────────
   function startEdit(row: IngredientRow) {
     setForm({
-      name:             row.name,
-      purchaseUnit:     (row.purchase_unit as PurchaseUnit) || "Kg",
-      unitsPerPurchase: String(row.units_per_purchase ?? row.purchase_qty ?? ""),
-      usageUnit:        (row.usage_unit as UsageUnit) || "grams",
-      yieldPct:         String(row.yield_percentage ?? row.processing_yield_pct ?? 100),
-      minStockLevel:    String(row.min_stock_level ?? ""),
+      name:               row.name,
+      purchaseUnit:       (row.purchase_unit as PurchaseUnit) || "Kg",
+      costPerUnit:        row.cost_per_unit > 0 ? String(row.cost_per_unit) : "",
+      lastPurchaseCost:   row.last_purchase_cost > 0 ? String(row.last_purchase_cost) : "",
+      yieldPct:           String(row.yield_percentage ?? 100),
+      usageUnit:          (row.usage_unit as UsageUnit) || "grams",
+      unitsPerPurchase:   String(row.units_per_purchase ?? ""),
+      minStockLevel:      row.min_stock_level > 0 ? String(row.min_stock_level) : "",
+      preferredVendorId:  row.preferred_vendor_id || "",
     })
     setEditRow(row)
+    setTab("add")
     window.scrollTo({ top: 0, behavior: "smooth" })
   }
 
+  // ── Bulk stock update ──────────────────────────────────────────────────────
+  function updateStockRow(idx: number, key: keyof StockRow, val: string) {
+    setStockRows(rows => rows.map((r, i) => i === idx ? { ...r, [key]: val } : r))
+  }
+
+  async function handleBulkStock() {
+    const validRows = stockRows.filter(r => r.ingredientId && r.qty && parseFloat(r.qty) >= 0)
+    if (validRows.length === 0) { setError("Add at least one valid row"); return }
+
+    setStockSaving(true); setError("")
+
+    for (const row of validRows) {
+      const qty = parseFloat(row.qty)
+      const ing = ingredients.find(i => i.id === row.ingredientId)
+      if (!ing) continue
+
+      let newQty = ing.current_stock ?? 0
+      if (row.type === "add")    newQty = newQty + qty
+      if (row.type === "remove") newQty = Math.max(0, newQty - qty)
+      if (row.type === "set")    newQty = qty
+
+      // Update current_stock on ingredients table
+      await supabase
+        .from("ingredients")
+        .update({ current_stock: newQty })
+        .eq("id", row.ingredientId)
+
+      // Upsert inventory_stock table (ingredient-level stock tracking)
+      await supabase
+        .from("inventory_stock")
+        .upsert(
+          { ingredient_id: row.ingredientId, current_quantity: newQty, updated_at: new Date().toISOString() },
+          { onConflict: "ingredient_id" }
+        )
+    }
+
+    setSuccess(`Updated stock for ${validRows.length} ingredient${validRows.length !== 1 ? "s" : ""}!`)
+    setStockRows([emptyStockRow()])
+    fetchIngredients()
+    setTimeout(() => setSuccess(""), 2500)
+    setStockSaving(false)
+  }
+
+  // ── Derived ────────────────────────────────────────────────────────────────
   const filtered = ingredients.filter(i =>
     i.name.toLowerCase().includes(searchQuery.toLowerCase())
   )
 
-  // ── Chart data ─────────────────────────────────────────────────────────────
   const uniqueVendors = [...new Set(priceHistory.map(h => h.vendor_name))]
   const chartData = priceHistory.reduce((acc: Record<string, string | number>[], point) => {
-    const dateStr = new Date(point.purchase_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })
+    const dateStr = new Date(point.purchase_date).toLocaleDateString("en-IN", {
+      day: "2-digit", month: "short",
+    })
     let existing = acc.find(d => d.date === dateStr)
     if (!existing) { existing = { date: dateStr }; acc.push(existing) }
     existing[point.vendor_name] = point.cost_per_usage_unit
@@ -196,217 +277,396 @@ export default function IngredientsView() {
   return (
     <div style={p.page}>
 
-      {/* Header */}
+      {/* ── Header ── */}
       <div style={p.header}>
         <div>
           <h2 style={p.title}>🥕 Ingredients</h2>
-          <p style={p.subtitle}>Set up ingredients — costs are tracked at time of purchase</p>
+          <p style={p.subtitle}>Manage raw materials — costing, yield, and stock tracking</p>
         </div>
         <div style={p.statPill}>
           {ingredients.length} ingredient{ingredients.length !== 1 ? "s" : ""}
         </div>
       </div>
 
-      {/* ── Form ── */}
-      <div style={p.card}>
-        <h3 style={p.cardTitle}>
-          {editRow ? `✏️ Editing: ${editRow.name}` : "➕ Add Ingredient"}
-        </h3>
-
-        {/* Row 1: Name + Purchase Unit */}
-        <div style={p.grid2}>
-          <div style={p.field}>
-            <label style={p.label}>Ingredient Name *</label>
-            <input
-              style={p.input}
-              placeholder="e.g. Jalapeños"
-              value={form.name}
-              onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-            />
-          </div>
-          <div style={p.field}>
-            <label style={p.label}>Purchase Unit *</label>
-            <select
-              style={p.input}
-              value={form.purchaseUnit}
-              onChange={e => setForm(f => ({ ...f, purchaseUnit: e.target.value as PurchaseUnit }))}
-            >
-              {PURCHASE_UNITS.map(u => <option key={u}>{u}</option>)}
-            </select>
-          </div>
-        </div>
-
-        {/* Row 2: Each unit contains [qty] [usage unit] */}
-        <div style={p.field}>
-          <label style={p.label}>Each {form.purchaseUnit} contains *</label>
-          <div style={{ display: "flex", gap: 8 }}>
-            <input
-              style={{ ...p.input, flex: 2 }}
-              type="number" min="0" step="0.1"
-              placeholder="e.g. 570"
-              value={form.unitsPerPurchase}
-              onChange={e => setForm(f => ({ ...f, unitsPerPurchase: e.target.value }))}
-            />
-            <select
-              style={{ ...p.input, flex: 1 }}
-              value={form.usageUnit}
-              onChange={e => setForm(f => ({ ...f, usageUnit: e.target.value as UsageUnit }))}
-            >
-              {USAGE_UNITS.map(u => <option key={u}>{u}</option>)}
-            </select>
-          </div>
-        </div>
-
-        {/* Row 3: Yield + Min Stock */}
-        <div style={p.grid2}>
-          <div style={p.field}>
-            <label style={p.label}>Processing Yield %</label>
-            <input
-              style={p.input}
-              type="number" min="1" max="100" step="0.1"
-              placeholder="e.g. 95"
-              value={form.yieldPct}
-              onChange={e => setForm(f => ({ ...f, yieldPct: e.target.value }))}
-            />
-            <span style={p.helper}>How much is usable after cleaning/trimming/draining</span>
-          </div>
-          <div style={p.field}>
-            <label style={p.label}>Low Stock Alert ({form.usageUnit})</label>
-            <input
-              style={p.input}
-              type="number" min="0" step="1"
-              placeholder="e.g. 500"
-              value={form.minStockLevel}
-              onChange={e => setForm(f => ({ ...f, minStockLevel: e.target.value }))}
-            />
-            <span style={p.helper}>Alert when stock falls below this amount</span>
-          </div>
-        </div>
-
-        {/* Live preview */}
-        {showPreview && (
-          <div style={p.preview}>
-            <div style={p.previewLine}>
-              1 <b>{form.purchaseUnit}</b> of <b>{form.name || "ingredient"}</b> contains{" "}
-              <b>{fmt(parsedUnits)} {form.usageUnit}</b>
-            </div>
-            {parsedYield > 0 && parsedYield < 100 && (
-              <>
-                <div style={p.previewLine}>
-                  After <b>{parsedYield}%</b> yield →{" "}
-                  <b style={{ color: "#16a34a" }}>{fmt(usable)} {form.usageUnit}</b> usable
-                </div>
-                <div style={p.previewLine}>
-                  Wastage per purchase:{" "}
-                  <b style={{ color: "#ef4444" }}>{fmt(wastage)} {form.usageUnit}</b>
-                </div>
-              </>
-            )}
-            <div style={{ ...p.previewLine, color: "#9ca3af", fontSize: 12 }}>
-              Cost per {form.usageUnit}: <i>calculated at time of purchase</i>
-            </div>
-          </div>
-        )}
-
-        {error   && <div style={p.errorBanner}>⚠️ {error}</div>}
-        {success && <div style={p.successBanner}>✅ {success}</div>}
-
-        <div style={p.btnRow}>
-          {editRow && (
-            <button
-              style={p.secondaryBtn}
-              onClick={() => { setForm(emptyForm); setEditRow(null); setError("") }}
-            >
-              Cancel
-            </button>
-          )}
+      {/* ── Tabs ── */}
+      <div style={p.tabRow}>
+        {([
+          { key: "list",  label: "📋 Ingredients" },
+          { key: "add",   label: editRow ? `✏️ Editing: ${editRow.name}` : "➕ Add" },
+          { key: "stock", label: "📦 Stock Update" },
+        ] as const).map(t => (
           <button
-            style={{ ...p.primaryBtn, opacity: saving ? 0.7 : 1 }}
-            onClick={handleSave}
-            disabled={saving}
+            key={t.key}
+            onClick={() => {
+              if (t.key !== "add") { setEditRow(null); setForm(emptyForm) }
+              setError(""); setTab(t.key)
+            }}
+            style={{
+              ...p.tabBtn,
+              background: tab === t.key ? "#111" : "white",
+              color:      tab === t.key ? "white" : "#374151",
+              fontWeight: tab === t.key ? 700 : 400,
+            }}
           >
-            {saving ? "Saving…" : editRow ? "Update Ingredient" : "Add Ingredient"}
+            {t.label}
           </button>
-        </div>
+        ))}
       </div>
 
-      {/* ── Table ── */}
-      <div style={p.card}>
-        <div style={p.tableHeader}>
-          <h3 style={p.cardTitle}>📋 All Ingredients</h3>
-          <input
-            style={{ ...p.input, width: 200, margin: 0 }}
-            placeholder="🔍 Search…"
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-          />
-        </div>
+      {error   && <div style={p.errorBanner}>⚠️ {error}</div>}
+      {success && <div style={p.successBanner}>✅ {success}</div>}
 
-        {loading ? (
-          <div style={p.empty}>Loading…</div>
-        ) : filtered.length === 0 ? (
-          <div style={p.empty}>
-            {searchQuery
-              ? "No ingredients match your search"
-              : "No ingredients yet. Add your first one above!"}
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {/* TAB 1 — LIST                                                       */}
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {tab === "list" && (
+        <div style={p.card}>
+          <div style={p.tableHeader}>
+            <h3 style={p.cardTitle}>All Ingredients</h3>
+            <input
+              style={{ ...p.input, width: 200, margin: 0 }}
+              placeholder="🔍 Search…"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+            />
           </div>
-        ) : (
+
+          {loading ? (
+            <div style={p.empty}>Loading…</div>
+          ) : filtered.length === 0 ? (
+            <div style={p.empty}>
+              {searchQuery
+                ? "No ingredients match your search"
+                : <span>No ingredients yet. <button style={p.linkBtn} onClick={() => setTab("add")}>Add your first →</button></span>
+              }
+            </div>
+          ) : (
+            <div style={{ overflowX: "auto" }}>
+              <table style={p.table}>
+                <thead>
+                  <tr>
+                    {["Name", "Purchase Unit", "Cost/Unit", "Yield%", "Usage Unit", "Units/Purchase", "Cost/Usage Unit", "Min Stock", ""].map(h => (
+                      <th key={h} style={p.th}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((row, i) => {
+                    const isLowStock = row.min_stock_level > 0 && (row.current_stock ?? 0) < row.min_stock_level
+                    return (
+                      <tr key={row.id} style={{ background: i % 2 === 0 ? "white" : "#f9fafb" }}>
+                        <td style={{ ...p.td, fontWeight: 600 }}>
+                          {row.name}
+                          {isLowStock && (
+                            <span style={{ ...p.badge, background: "#fee2e2", color: "#991b1b", marginLeft: 6 }}>
+                              Low Stock
+                            </span>
+                          )}
+                        </td>
+                        <td style={p.td}>{row.purchase_unit || "—"}</td>
+                        <td style={{ ...p.td, fontFamily: "monospace" }}>
+                          {row.cost_per_unit > 0 ? `₹${fmt(row.cost_per_unit, 2)}` : <span style={{ color: "#9ca3af" }}>—</span>}
+                        </td>
+                        <td style={p.td}>
+                          <span style={{
+                            ...p.badge,
+                            background: (row.yield_percentage ?? 100) >= 90 ? "#dcfce7" : (row.yield_percentage ?? 100) >= 70 ? "#fef9c3" : "#fee2e2",
+                            color:      (row.yield_percentage ?? 100) >= 90 ? "#166534" : (row.yield_percentage ?? 100) >= 70 ? "#854d0e" : "#991b1b",
+                          }}>
+                            {row.yield_percentage ?? 100}%
+                          </span>
+                        </td>
+                        <td style={p.td}>
+                          <span style={{ ...p.badge, background: "#ede9fe", color: "#6d28d9" }}>
+                            {row.usage_unit || row.unit}
+                          </span>
+                        </td>
+                        <td style={{ ...p.td, fontFamily: "monospace" }}>
+                          {row.units_per_purchase != null
+                            ? `${fmt(row.units_per_purchase, 0)} ${row.usage_unit || row.unit}`
+                            : "—"}
+                        </td>
+                        <td style={{ ...p.td, fontWeight: 700, fontFamily: "monospace" }}>
+                          {row.cost_per_usage_unit > 0
+                            ? `₹${fmt(row.cost_per_usage_unit, 4)}`
+                            : <span style={{ color: "#9ca3af", fontWeight: 400, fontSize: 11 }}>Not set</span>}
+                        </td>
+                        <td style={{ ...p.td, fontFamily: "monospace" }}>
+                          {row.min_stock_level > 0
+                            ? `${fmt(row.min_stock_level, 0)} ${row.usage_unit || row.unit}`
+                            : "—"}
+                        </td>
+                        <td style={p.td}>
+                          <div style={{ display: "flex", gap: 4 }}>
+                            <button
+                              style={p.iconBtn}
+                              onClick={() => fetchHistory(row)}
+                              title="Price history"
+                            >📈</button>
+                            <button style={p.iconBtn} onClick={() => startEdit(row)}>✏️</button>
+                            <button
+                              style={{ ...p.iconBtn, background: "#fee2e2" }}
+                              onClick={() => setDeleteId(row.id)}
+                            >🗑️</button>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {/* TAB 2 — ADD / EDIT                                                 */}
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {tab === "add" && (
+        <div style={p.card}>
+          <h3 style={p.cardTitle}>
+            {editRow ? `✏️ Editing: ${editRow.name}` : "➕ Add Ingredient"}
+          </h3>
+
+          {/* Row 1: Name + Purchase Unit */}
+          <div style={p.grid2}>
+            <div style={p.field}>
+              <label style={p.label}>Ingredient Name *</label>
+              <input
+                style={p.input}
+                placeholder="e.g. Jalapeños"
+                value={form.name}
+                onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+              />
+            </div>
+            <div style={p.field}>
+              <label style={p.label}>Purchase Unit *</label>
+              <select
+                style={p.input}
+                value={form.purchaseUnit}
+                onChange={e => setForm(f => ({ ...f, purchaseUnit: e.target.value as PurchaseUnit }))}
+              >
+                {PURCHASE_UNITS.map(u => <option key={u}>{u}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {/* Row 2: Cost Per Unit + Last Purchase Cost */}
+          <div style={p.grid2}>
+            <div style={p.field}>
+              <label style={p.label}>Cost Per Unit ₹ *</label>
+              <input
+                style={p.input}
+                type="number" min="0" step="0.01"
+                placeholder="e.g. 200"
+                value={form.costPerUnit}
+                onChange={e => setForm(f => ({ ...f, costPerUnit: e.target.value }))}
+              />
+              <span style={p.helper}>Standard budget price for 1 {form.purchaseUnit}</span>
+            </div>
+            <div style={p.field}>
+              <label style={p.label}>Last Purchase Cost ₹</label>
+              <input
+                style={p.input}
+                type="number" min="0" step="0.01"
+                placeholder="e.g. 195"
+                value={form.lastPurchaseCost}
+                onChange={e => setForm(f => ({ ...f, lastPurchaseCost: e.target.value }))}
+              />
+              <span style={p.helper}>What you actually paid last time (for tracking)</span>
+            </div>
+          </div>
+
+          {/* Row 3: Each [unit] contains [qty] [usage unit] */}
+          <div style={p.field}>
+            <label style={p.label}>Each {form.purchaseUnit} contains *</label>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input
+                style={{ ...p.input, flex: 2 }}
+                type="number" min="0" step="0.1"
+                placeholder="e.g. 500"
+                value={form.unitsPerPurchase}
+                onChange={e => setForm(f => ({ ...f, unitsPerPurchase: e.target.value }))}
+              />
+              <select
+                style={{ ...p.input, flex: 1 }}
+                value={form.usageUnit}
+                onChange={e => setForm(f => ({ ...f, usageUnit: e.target.value as UsageUnit }))}
+              >
+                {USAGE_UNITS.map(u => <option key={u}>{u}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {/* Row 4: Yield + Min Stock */}
+          <div style={p.grid2}>
+            <div style={p.field}>
+              <label style={p.label}>Processing Yield %</label>
+              <input
+                style={p.input}
+                type="number" min="1" max="100" step="0.1"
+                placeholder="e.g. 95"
+                value={form.yieldPct}
+                onChange={e => setForm(f => ({ ...f, yieldPct: e.target.value }))}
+              />
+              <span style={p.helper}>How much is usable after cleaning/draining/trimming</span>
+            </div>
+            <div style={p.field}>
+              <label style={p.label}>Min Stock Alert ({form.usageUnit})</label>
+              <input
+                style={p.input}
+                type="number" min="0" step="1"
+                placeholder="e.g. 500"
+                value={form.minStockLevel}
+                onChange={e => setForm(f => ({ ...f, minStockLevel: e.target.value }))}
+              />
+              <span style={p.helper}>Flag as Low Stock when quantity falls below this</span>
+            </div>
+          </div>
+
+          {/* Row 5: Preferred Vendor */}
+          <div style={p.field}>
+            <label style={p.label}>Preferred Vendor</label>
+            <select
+              style={p.input}
+              value={form.preferredVendorId}
+              onChange={e => setForm(f => ({ ...f, preferredVendorId: e.target.value }))}
+            >
+              <option value="">— None —</option>
+              {vendors.map(v => (
+                <option key={v.id} value={v.id}>{v.name}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Live preview */}
+          {showPreview && (
+            <div style={p.preview}>
+              <div style={p.previewLine}>
+                1 <b>{form.purchaseUnit}</b> of <b>{form.name || "ingredient"}</b> costs{" "}
+                <b>₹{fmt(parsedCPU, 2)}</b>
+              </div>
+              <div style={p.previewLine}>
+                Contains <b>{fmt(parsedUPP)} {form.usageUnit}</b> with{" "}
+                <b>{parsedYld}%</b> yield
+              </div>
+              <div style={p.previewLine}>
+                → Usable:{" "}
+                <b style={{ color: "#16a34a" }}>{fmt(usable)} {form.usageUnit}</b>
+              </div>
+              <div style={{ ...p.previewLine, fontWeight: 700, color: "#111", marginTop: 2 }}>
+                → Cost per {form.usageUnit === "grams" ? "gram" : form.usageUnit === "ml" ? "ml" : "piece"}:{" "}
+                <span style={{ color: "#2D6A4F", fontSize: 16 }}>
+                  ₹{fmt(calcCostPerUsageUnit, 4)}
+                </span>
+              </div>
+            </div>
+          )}
+
+          <div style={p.btnRow}>
+            {editRow && (
+              <button
+                style={p.secondaryBtn}
+                onClick={() => { setForm(emptyForm); setEditRow(null); setError(""); setTab("list") }}
+              >
+                Cancel
+              </button>
+            )}
+            <button
+              style={{ ...p.primaryBtn, opacity: saving ? 0.7 : 1 }}
+              onClick={handleSave}
+              disabled={saving}
+            >
+              {saving ? "Saving…" : editRow ? "Update Ingredient" : "Add Ingredient"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {/* TAB 3 — BULK STOCK UPDATE                                          */}
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {tab === "stock" && (
+        <div style={p.card}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+            <h3 style={{ ...p.cardTitle, margin: 0 }}>📦 Bulk Stock Update</h3>
+            <button
+              style={{ ...p.secondaryBtn, height: 36, fontSize: 13 }}
+              onClick={() => setStockRows(r => [...r, emptyStockRow()])}
+            >
+              + Add Row
+            </button>
+          </div>
+
           <div style={{ overflowX: "auto" }}>
             <table style={p.table}>
               <thead>
                 <tr>
-                  {["Name", "Purchase Unit", "Per Unit", "Yield %", "Min Stock", "₹/unit", ""].map(h => (
+                  {["Ingredient", "Quantity", "Adjustment Type", "Note", ""].map(h => (
                     <th key={h} style={p.th}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((row, i) => {
-                  const yieldVal      = row.yield_percentage ?? row.processing_yield_pct ?? 100
-                  const cpu           = row.cost_per_usage_unit ?? row.cost_per_unit ?? 0
-                  const unitsPerPurch = row.units_per_purchase ?? row.purchase_qty
-                  const usageU        = row.usage_unit || row.unit
+                {stockRows.map((row, idx) => {
+                  const ing = ingredients.find(i => i.id === row.ingredientId)
                   return (
-                    <tr key={row.id} style={{ background: i % 2 === 0 ? "white" : "#f9fafb" }}>
-                      <td style={{ ...p.td, fontWeight: 600 }}>{row.name}</td>
-                      <td style={p.td}>{row.purchase_unit || "—"}</td>
-                      <td style={p.td}>
-                        {unitsPerPurch != null
-                          ? `${fmt(unitsPerPurch)} ${usageU}`
-                          : "—"}
+                    <tr key={idx}>
+                      <td style={{ ...p.td, minWidth: 200 }}>
+                        <select
+                          style={{ ...p.input, height: 36 }}
+                          value={row.ingredientId}
+                          onChange={e => updateStockRow(idx, "ingredientId", e.target.value)}
+                        >
+                          <option value="">— Select —</option>
+                          {ingredients.map(i => (
+                            <option key={i.id} value={i.id}>
+                              {i.name} ({i.usage_unit || i.unit}) · stock: {fmt(i.current_stock ?? 0, 1)}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td style={{ ...p.td, minWidth: 120 }}>
+                        <input
+                          style={{ ...p.input, height: 36 }}
+                          type="number" min="0" step="0.01"
+                          placeholder="qty"
+                          value={row.qty}
+                          onChange={e => updateStockRow(idx, "qty", e.target.value)}
+                        />
+                        {ing && row.qty && (
+                          <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2 }}>
+                            {ing.usage_unit || ing.unit}
+                          </div>
+                        )}
+                      </td>
+                      <td style={{ ...p.td, minWidth: 160 }}>
+                        <select
+                          style={{ ...p.input, height: 36 }}
+                          value={row.type}
+                          onChange={e => updateStockRow(idx, "type", e.target.value as AdjType)}
+                        >
+                          <option value="add">➕ Add</option>
+                          <option value="remove">➖ Remove</option>
+                          <option value="set">🔁 Set exact</option>
+                        </select>
+                      </td>
+                      <td style={{ ...p.td, minWidth: 160 }}>
+                        <input
+                          style={{ ...p.input, height: 36 }}
+                          placeholder="Optional note"
+                          value={row.note}
+                          onChange={e => updateStockRow(idx, "note", e.target.value)}
+                        />
                       </td>
                       <td style={p.td}>
-                        <span style={{
-                          ...p.badge,
-                          background: yieldVal >= 90 ? "#dcfce7" : yieldVal >= 70 ? "#fef9c3" : "#fee2e2",
-                          color:      yieldVal >= 90 ? "#166534" : yieldVal >= 70 ? "#854d0e" : "#991b1b",
-                        }}>
-                          {yieldVal}%
-                        </span>
-                      </td>
-                      <td style={p.td}>
-                        {row.min_stock_level
-                          ? `${fmt(row.min_stock_level)} ${usageU}`
-                          : "—"}
-                      </td>
-                      <td style={{ ...p.td, fontWeight: 700 }}>
-                        {cpu > 0
-                          ? `₹${fmt(cpu, 4)}`
-                          : <span style={{ color: "#9ca3af", fontSize: 11, fontWeight: 400 }}>No purchase yet</span>}
-                      </td>
-                      <td style={p.td}>
-                        <div style={{ display: "flex", gap: 4 }}>
-                          <button
-                            style={p.iconBtn}
-                            onClick={() => fetchHistory(row)}
-                            title="Price history"
-                          >📈</button>
-                          <button style={p.iconBtn} onClick={() => startEdit(row)}>✏️</button>
+                        {stockRows.length > 1 && (
                           <button
                             style={{ ...p.iconBtn, background: "#fee2e2" }}
-                            onClick={() => setDeleteId(row.id)}
-                          >🗑️</button>
-                        </div>
+                            onClick={() => setStockRows(r => r.filter((_, i) => i !== idx))}
+                          >✕</button>
+                        )}
                       </td>
                     </tr>
                   )
@@ -414,8 +674,41 @@ export default function IngredientsView() {
               </tbody>
             </table>
           </div>
-        )}
-      </div>
+
+          {/* Preview total updates */}
+          {stockRows.some(r => r.ingredientId && r.qty) && (
+            <div style={{ ...p.preview, marginTop: 12 }}>
+              {stockRows.filter(r => r.ingredientId && r.qty).map((row, idx) => {
+                const ing = ingredients.find(i => i.id === row.ingredientId)
+                if (!ing) return null
+                const qty = parseFloat(row.qty) || 0
+                let newQty = ing.current_stock ?? 0
+                if (row.type === "add")    newQty = newQty + qty
+                if (row.type === "remove") newQty = Math.max(0, newQty - qty)
+                if (row.type === "set")    newQty = qty
+                return (
+                  <div key={idx} style={p.previewLine}>
+                    <b>{ing.name}</b>: {fmt(ing.current_stock ?? 0, 1)} → {" "}
+                    <b style={{ color: newQty >= ing.min_stock_level ? "#16a34a" : "#ef4444" }}>
+                      {fmt(newQty, 1)} {ing.usage_unit || ing.unit}
+                    </b>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          <div style={p.btnRow}>
+            <button
+              style={{ ...p.primaryBtn, opacity: stockSaving ? 0.7 : 1 }}
+              onClick={handleBulkStock}
+              disabled={stockSaving}
+            >
+              {stockSaving ? "Updating…" : "Update Stock"}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── Delete modal ── */}
       {deleteId && (
@@ -424,9 +717,9 @@ export default function IngredientsView() {
             <div style={{ fontSize: 32, marginBottom: 12 }}>🗑️</div>
             <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Delete Ingredient?</h3>
             <p style={{ color: "#6b7280", marginBottom: 20, fontSize: 14 }}>
-              This will permanently remove the ingredient and its cost data.
+              This will permanently remove the ingredient and all cost data.
             </p>
-            <div style={{ display: "flex", gap: 10 }}>
+            <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
               <button style={p.secondaryBtn} onClick={() => setDeleteId(null)}>Cancel</button>
               <button
                 style={{ ...p.primaryBtn, background: "#ef4444" }}
@@ -448,7 +741,6 @@ export default function IngredientsView() {
             }}
             onClick={e => e.stopPropagation()}
           >
-            {/* Modal header */}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
               <h3 style={{ margin: 0, fontSize: 17, fontWeight: 800 }}>
                 📈 {historyIng.name} — Price History
@@ -469,7 +761,6 @@ export default function IngredientsView() {
               </div>
             ) : (
               <>
-                {/* Line chart */}
                 <div style={{ height: 210, marginBottom: 20 }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
@@ -480,9 +771,7 @@ export default function IngredientsView() {
                         tickFormatter={v => `₹${Number(v).toFixed(3)}`}
                         width={72}
                       />
-                      <Tooltip
-                        formatter={(v: number) => [`₹${v.toFixed(4)}/${usageUnitLabel}`, ""]}
-                      />
+                      <Tooltip formatter={(v: number) => [`₹${v.toFixed(4)}/${usageUnitLabel}`, ""]} />
                       {uniqueVendors.length > 1 && <Legend />}
                       {uniqueVendors.map((vendor, idx) => (
                         <Line
@@ -500,7 +789,6 @@ export default function IngredientsView() {
                   </ResponsiveContainer>
                 </div>
 
-                {/* History table */}
                 <table style={{ ...p.table, fontSize: 13 }}>
                   <thead>
                     <tr>
@@ -511,8 +799,8 @@ export default function IngredientsView() {
                   </thead>
                   <tbody>
                     {[...priceHistory].reverse().map((h, i, arr) => {
-                      const prevCost  = arr[i + 1]?.cost_per_usage_unit
-                      const pct       = prevCost
+                      const prevCost = arr[i + 1]?.cost_per_usage_unit
+                      const pct = prevCost
                         ? ((h.cost_per_usage_unit - prevCost) / prevCost) * 100
                         : null
                       return (
@@ -523,9 +811,7 @@ export default function IngredientsView() {
                           <td style={p.td}>{h.vendor_name}</td>
                           <td style={p.td}>{h.quantity_received} {historyIng.purchase_unit}</td>
                           <td style={p.td}>₹{fmt(h.total_cost, 0)}</td>
-                          <td style={{ ...p.td, fontWeight: 700 }}>
-                            ₹{fmt(h.cost_per_usage_unit, 4)}/{usageUnitLabel}
-                          </td>
+                          <td style={{ ...p.td, fontWeight: 700 }}>₹{fmt(h.cost_per_usage_unit, 4)}/{usageUnitLabel}</td>
                           <td style={p.td}>
                             {pct === null
                               ? <span style={{ color: "#9ca3af" }}>—</span>
@@ -550,11 +836,13 @@ export default function IngredientsView() {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const p: Record<string, React.CSSProperties> = {
-  page:        { padding: "16px 16px 80px", maxWidth: 1100, margin: "0 auto" },
+  page:        { padding: "16px 16px 80px", maxWidth: 1200, margin: "0 auto" },
   header:      { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 },
   title:       { fontSize: 22, fontWeight: 800, color: "#111", margin: 0 },
   subtitle:    { fontSize: 13, color: "#6b7280", marginTop: 4 },
   statPill:    { background: "#111", color: "white", borderRadius: 20, padding: "6px 14px", fontSize: 13, fontWeight: 600 },
+  tabRow:      { display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" },
+  tabBtn:      { height: 36, padding: "0 16px", border: "1px solid #e5e7eb", borderRadius: 20, fontSize: 13, cursor: "pointer" },
   card:        { background: "white", border: "1px solid #e5e7eb", borderRadius: 12, padding: 20, marginBottom: 16 },
   cardTitle:   { fontSize: 15, fontWeight: 700, color: "#111", margin: "0 0 16px" },
   tableHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 },
@@ -567,30 +855,31 @@ const p: Record<string, React.CSSProperties> = {
     fontSize: 14, color: "#111", background: "#fafafa", outline: "none",
     width: "100%", boxSizing: "border-box",
   },
-  preview:     { background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 10, padding: "12px 16px", marginBottom: 12 },
-  previewLine: { fontSize: 13, color: "#374151", marginBottom: 4, lineHeight: 1.5 },
+  preview:       { background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 10, padding: "12px 16px", marginBottom: 12 },
+  previewLine:   { fontSize: 13, color: "#374151", marginBottom: 4, lineHeight: 1.5 },
   errorBanner:   { background: "#fee2e2", color: "#991b1b", borderRadius: 8, padding: "10px 14px", fontSize: 13, marginBottom: 12 },
   successBanner: { background: "#dcfce7", color: "#166534", borderRadius: 8, padding: "10px 14px", fontSize: 13, marginBottom: 12 },
-  btnRow:      { display: "flex", gap: 10, justifyContent: "flex-end" },
-  primaryBtn:  { height: 44, padding: "0 20px", background: "#111", color: "white", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: "pointer" },
-  secondaryBtn:{ height: 44, padding: "0 20px", background: "white", color: "#374151", border: "1px solid #d1d5db", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: "pointer" },
-  table:       { width: "100%", borderCollapse: "collapse", fontSize: 13 },
+  btnRow:        { display: "flex", gap: 10, justifyContent: "flex-end" },
+  primaryBtn:    { height: 44, padding: "0 20px", background: "#111", color: "white", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: "pointer" },
+  secondaryBtn:  { height: 44, padding: "0 20px", background: "white", color: "#374151", border: "1px solid #d1d5db", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: "pointer" },
+  linkBtn:       { background: "none", border: "none", color: "#111", fontWeight: 700, cursor: "pointer", textDecoration: "underline", fontSize: 14 },
+  table:         { width: "100%", borderCollapse: "collapse", fontSize: 13 },
   th: {
     padding: "10px 12px", background: "#f3f4f6", textAlign: "left",
     fontSize: 11, fontWeight: 700, color: "#6b7280",
     textTransform: "uppercase", letterSpacing: "0.5px", whiteSpace: "nowrap",
   },
-  td:          { padding: "10px 12px", borderBottom: "1px solid #f3f4f6", color: "#111", whiteSpace: "nowrap" },
-  badge:       { display: "inline-block", padding: "2px 8px", borderRadius: 20, fontSize: 12, fontWeight: 700 },
+  td:            { padding: "10px 12px", borderBottom: "1px solid #f3f4f6", color: "#111", whiteSpace: "nowrap" },
+  badge:         { display: "inline-block", padding: "2px 8px", borderRadius: 20, fontSize: 11, fontWeight: 700 },
   iconBtn: {
     background: "#f3f4f6", border: "none", borderRadius: 6,
     width: 32, height: 32, cursor: "pointer", fontSize: 14,
     display: "inline-flex", alignItems: "center", justifyContent: "center",
   },
-  empty:       { textAlign: "center", padding: "40px 0", color: "#9ca3af", fontSize: 14 },
+  empty:         { textAlign: "center", padding: "40px 0", color: "#9ca3af", fontSize: 14 },
   overlay: {
     position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)",
     display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200,
   },
-  modal:       { background: "white", borderRadius: 14, padding: "28px 24px", maxWidth: 360, width: "90%", textAlign: "center" },
+  modal:         { background: "white", borderRadius: 14, padding: "28px 24px", maxWidth: 360, width: "90%", textAlign: "center" },
 }
