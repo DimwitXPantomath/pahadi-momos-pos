@@ -348,7 +348,7 @@ export default function IngredientsPage() {
               <table style={p.table}>
                 <thead>
                   <tr>
-                    {["Name", "Purchase Unit", "Cost/Unit", "Yield%", "Usage Unit", "Units/Purchase", "Cost/Usage Unit", "Min Stock", ""].map(h => (
+                    {["Name", "Stock", "Cost/Unit", "Yield%", "Usage Unit", "Units/Purchase", "Cost/Usage Unit", "Min Stock", ""].map(h => (
                       <th key={h} style={p.th}>{h}</th>
                     ))}
                   </tr>
@@ -366,7 +366,15 @@ export default function IngredientsPage() {
                             </span>
                           )}
                         </td>
-                        <td style={p.td}>{row.purchase_unit || "—"}</td>
+                        <td style={{ ...p.td, fontFamily: "monospace" }}>
+                          {(() => {
+                            const stock = row.current_stock ?? 0
+                            const unit  = row.usage_unit || row.unit
+                            if (stock === 0) return <span style={{ color: "#ef4444", fontWeight: 700 }}>0 {unit}</span>
+                            if (isLowStock)  return <span style={{ color: "#d97706", fontWeight: 700 }}>{fmt(stock, 1)} {unit}</span>
+                            return <span style={{ color: "#16a34a", fontWeight: 600 }}>{fmt(stock, 1)} {unit}</span>
+                          })()}
+                        </td>
                         <td style={{ ...p.td, fontFamily: "monospace" }}>
                           {row.cost_per_unit > 0 ? `₹${fmt(row.cost_per_unit, 2)}` : <span style={{ color: "#9ca3af" }}>—</span>}
                         </td>
