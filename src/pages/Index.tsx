@@ -23,7 +23,6 @@ import InventoryView from "@/components/inventory/InventoryView"
 import ProcurementView from "@/components/procurement/ProcurementView"
 import MISView from "@/components/mis/MISView"
 import LoyaltyView from "@/components/loyalty/LoyaltyView"
-import IngredientsPage from "@/pages/IngredientsPage"
 import SubRecipesPage from "@/pages/SubRecipesPage"
 import RecipesPage from "@/pages/RecipesPage"
 import ExpensesView from "@/components/expenses/ExpensesView"
@@ -836,8 +835,6 @@ export default function Index() {
         </div>
 
       )}
-
-      {view === "ingredients" && <IngredientsPage />}
 
       {view === "procurement" && <ProcurementView />}
 
