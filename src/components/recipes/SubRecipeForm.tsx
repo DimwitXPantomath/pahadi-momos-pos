@@ -21,6 +21,7 @@ export default function SubRecipeForm({ onSave, onCancel, ingredients, initial }
   const [name, setName] = useState(initial?.name ?? '')
   const [yieldQty, setYieldQty] = useState(String(initial?.yield_quantity ?? ''))
   const [yieldUnit, setYieldUnit] = useState(initial?.yield_unit ?? 'g')
+  const [shelfLife, setShelfLife] = useState(String(initial?.shelf_life_hours ?? '24'))
   const [rows, setRows] = useState<RowState[]>(
     initial?.items.map(i => ({
       ingredient_id: i.ingredient_id,
@@ -95,6 +96,7 @@ export default function SubRecipeForm({ onSave, onCancel, ingredients, initial }
         name,
         yield_quantity: yieldQtyNum,
         yield_unit: yieldUnit,
+        shelf_life_hours: Number(shelfLife) || 24,
         items: rows.map(r => ({
           ingredient_id: r.ingredient_id,
           quantity_used: Number(r.quantity_used),
@@ -144,6 +146,23 @@ export default function SubRecipeForm({ onSave, onCancel, ingredients, initial }
             <option value="kg">kg</option>
           </select>
         </div>
+      </div>
+
+      {/* Shelf life */}
+      <div style={{ ...s.field, marginBottom: 12 }}>
+        <label style={s.label}>Shelf Life (hours) *</label>
+        <input
+          style={s.input}
+          type="number"
+          min="0.5"
+          step="0.5"
+          placeholder="e.g. 24"
+          value={shelfLife}
+          onChange={e => setShelfLife(e.target.value)}
+        />
+        <span style={{ fontSize: 11, color: '#9ca3af' }}>
+          Expiry alert fires when ≤30% shelf life remains (min 2h)
+        </span>
       </div>
 
       {/* Ingredient rows */}

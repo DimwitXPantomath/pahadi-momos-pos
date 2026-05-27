@@ -26,6 +26,8 @@ import LoyaltyView from "@/components/loyalty/LoyaltyView"
 import SubRecipesPage from "@/pages/SubRecipesPage"
 import RecipesPage from "@/pages/RecipesPage"
 import ExpensesView from "@/components/expenses/ExpensesView"
+import ProductionPage from "@/pages/ProductionPage"
+import ExpiryAlarmModal from "@/components/ExpiryAlarmModal"
 
 const OUTLET_ID = "demo-outlet"
 
@@ -44,6 +46,7 @@ type View =
   | "loyalty"
   | "inventory"
   | "expenses"
+  | "production"
 
 type PaymentMethod = "CASH" | "CARD" | "UPI"
 
@@ -923,8 +926,13 @@ export default function Index() {
 
       {view === "inventory" && <InventoryView />}
 
+      {view === "production" && <ProductionPage />}
+
       {/* EXPENSES VIEW */}
       {view === "expenses" && <ExpensesView />}
+
+      {/* EXPIRY ALARM — global, shown on any view */}
+      <ExpiryAlarmModalWrapper />
 
       {/* QR MODAL */}
       {qrOrderId && (
@@ -993,6 +1001,28 @@ export default function Index() {
         isOpen={showBill}
         onClose={() => { setShowBill(false); setBillOrder(null); setView("orders") }}
       />
-    </>  
+    </>
   );
+}
+
+// ── Expiry Alarm Wrapper — checks once on mount, re-checks every 30 min ──────
+
+function ExpiryAlarmModalWrapper() {
+  const [show, setShow] = useState(false)
+  const [checkKey, setCheckKey] = useState(0)
+
+  useEffect(() => {
+    // Small delay so the main app loads first
+    const t = setTimeout(() => setShow(true), 2000)
+    return () => clearTimeout(t)
+  }, [checkKey])
+
+  function handleDismiss() {
+    setShow(false)
+    // Re-check after 30 minutes
+    setTimeout(() => setCheckKey(k => k + 1), 30 * 60 * 1000)
+  }
+
+  if (!show) return null
+  return <ExpiryAlarmModal onDismiss={handleDismiss} />
 }

@@ -16,6 +16,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Menu Management", value: "menu_manage", icon: "✏️",  roles: ["owner","manager"] },
   { label: "Sub Recipes",     value: "subrecipes",  icon: "🥣",  roles: ["owner","manager"] },
   { label: "Recipes",         value: "recipes",     icon: "📖",  roles: ["owner","manager"] },
+  { label: "Production",      value: "production",  icon: "🍳",  roles: ["owner","manager"] },
   { label: "Procurement",     value: "procurement", icon: "🛒",  roles: ["owner","manager"] },
   { label: "Analytics",       value: "analytics",   icon: "📊",  roles: ["owner"] },
   { label: "Loyalty Points",  value: "loyalty",     icon: "⭐",  roles: ["owner", "manager"] },

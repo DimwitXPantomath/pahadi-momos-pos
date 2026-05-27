@@ -86,6 +86,7 @@ export function useSubRecipes() {
           yield_unit: formData.yield_unit,
           total_cost,
           cost_per_unit,
+          shelf_life_hours: Number(formData.shelf_life_hours) || 24,
         })
         .select()
         .single()
@@ -133,6 +134,7 @@ export function useSubRecipes() {
           yield_unit: formData.yield_unit,
           total_cost,
           cost_per_unit,
+          shelf_life_hours: Number(formData.shelf_life_hours) || 24,
           updated_at: new Date().toISOString(),
         })
         .eq('id', id)

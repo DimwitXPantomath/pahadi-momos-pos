@@ -62,6 +62,7 @@ export interface SubRecipe {
   yield_unit: string
   total_cost: number
   cost_per_unit: number
+  shelf_life_hours: number
   created_at: string
   updated_at: string
 }
@@ -74,6 +75,7 @@ export interface SubRecipeFormData {
   name: string
   yield_quantity: number | string
   yield_unit: string
+  shelf_life_hours: number | string
   items: {
     ingredient_id: string
     quantity_used: number | string
