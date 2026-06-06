@@ -2,8 +2,6 @@ import { useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import type { Ingredient, IngredientFormData } from '@/types/recipe'
 
-const OUTLET_ID = 'demo-outlet'
-
 export function useIngredients() {
   const [ingredients, setIngredients] = useState<Ingredient[]>([])
   const [loading, setLoading] = useState(false)
@@ -16,7 +14,6 @@ export function useIngredients() {
     const { data, error: err } = await supabase
       .from('ingredients')
       .select('*')
-      .eq('outlet_id', OUTLET_ID)
       .order('name', { ascending: true })
 
     if (err) {
@@ -32,7 +29,6 @@ export function useIngredients() {
       const { data, error: err } = await supabase
         .from('ingredients')
         .insert({
-          outlet_id: OUTLET_ID,
           name: formData.name.trim(),
           base_unit: formData.base_unit,
           purchase_unit: formData.purchase_unit,

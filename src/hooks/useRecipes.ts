@@ -3,8 +3,6 @@ import { supabase } from '@/lib/supabase'
 import type { Recipe, RecipeWithItems, RecipeFormData } from '@/types/recipe'
 import { calcRecipeCost } from '@/lib/recipeCosting'
 
-const OUTLET_ID = 'demo-outlet'
-
 export function useRecipes() {
   const [recipes, setRecipes] = useState<RecipeWithItems[]>([])
   const [loading, setLoading] = useState(false)
@@ -17,7 +15,6 @@ export function useRecipes() {
     const { data: recs, error: err } = await supabase
       .from('recipes')
       .select('*')
-      .eq('outlet_id', OUTLET_ID)
       .order('name', { ascending: true })
 
     if (err) {
@@ -83,7 +80,6 @@ export function useRecipes() {
       const { data: rec, error: err } = await supabase
         .from('recipes')
         .insert({
-          outlet_id: OUTLET_ID,
           name: formData.name.trim(),
           menu_item_id: formData.menu_item_id || null,
           total_cost,
