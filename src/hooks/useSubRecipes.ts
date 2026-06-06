@@ -27,12 +27,12 @@ export function useSubRecipes() {
       (srs || []).map(async (sr: SubRecipe) => {
         const { data: itemRows } = await supabase
           .from('sub_recipe_items')
-          .select('*, ingredients(id, name, base_unit, cost_per_base_unit)')
+          .select('*, ingredients(id, name, usage_unit, unit, cost_per_usage_unit)')
           .eq('sub_recipe_id', sr.id)
 
         const items = (itemRows || []).map((row: Record<string, unknown>) => {
           const ing = row.ingredients as Record<string, unknown> | null
-          const costPerBase = (ing?.cost_per_base_unit as number) ?? 0
+          const costPerBase = (ing?.cost_per_usage_unit as number) ?? 0
           const qty = (row.quantity_used as number) ?? 0
           return {
             id: row.id as string,
@@ -45,8 +45,8 @@ export function useSubRecipes() {
               ? {
                   id: ing.id as string,
                   name: ing.name as string,
-                  base_unit: ing.base_unit as 'g' | 'ml' | 'pcs',
-                  cost_per_base_unit: costPerBase,
+                  base_unit: ((ing.usage_unit || ing.unit || 'g') as string) as 'g' | 'ml' | 'pcs',
+                  cost_per_base_unit: (ing.cost_per_usage_unit as number) ?? 0,
                 }
               : undefined,
           }

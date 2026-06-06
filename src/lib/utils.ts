@@ -3,11 +3,13 @@ export function cn(...classes: (string | undefined | false)[]) {
 }
 
 export function formatCurrency(n: number): string {
-  return "₹" + n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const val = n ?? 0;
+  return "₹" + val.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 export function formatQty(n: number, unit: string): string {
-  return n.toLocaleString("en-IN", { maximumFractionDigits: 3 }) + " " + unit;
+  const val = n ?? 0;
+  return val.toLocaleString("en-IN", { maximumFractionDigits: 3 }) + " " + (unit ?? '');
 }
 
 export function calcYield(

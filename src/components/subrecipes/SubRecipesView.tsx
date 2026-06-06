@@ -7,7 +7,7 @@ interface Ingredient {
   id: string
   name: string
   unit: string
-  cost_per_unit: number
+  cost_per_base_unit: number
 }
 
 interface SubRecipe {
@@ -83,7 +83,7 @@ export default function SubRecipesView() {
   const fetchIngredients = useCallback(async () => {
     const { data } = await supabase
       .from("ingredients")
-      .select("id, name, unit, cost_per_unit")
+      .select("id, name, unit, cost_per_base_unit")
       .order("name")
     setIngredients(data || [])
   }, [])
@@ -91,11 +91,11 @@ export default function SubRecipesView() {
   const fetchItems = useCallback(async (id: string) => {
     const { data } = await supabase
       .from("sub_recipe_items")
-      .select(`id, sub_recipe_id, ingredient_id, quantity, yield_percent, wastage, ingredients(name, unit, cost_per_unit)`)
+      .select(`id, sub_recipe_id, ingredient_id, quantity, yield_percent, wastage, ingredients(name, unit, cost_per_base_unit)`)
       .eq("sub_recipe_id", id)
 
     const mapped: SubRecipeItem[] = (data || []).map((row: any) => {
-      const costPer = row.ingredients?.cost_per_unit ?? 0
+      const costPer = row.ingredients?.cost_per_base_unit ?? 0
       const usable = row.quantity * (row.yield_percent / 100)
       return {
         id: row.id,
@@ -141,7 +141,7 @@ export default function SubRecipesView() {
   const previewIng = ingredients.find(i => i.id === addForm.ingredient_id)
   const previewUsable = previewQty * (previewYield / 100)
   const previewWastage = previewQty - previewUsable
-  const previewCost = (previewIng?.cost_per_unit ?? 0) * previewQty
+  const previewCost = (previewIng?.cost_per_base_unit ?? 0) * previewQty
 
   // ── Actions ────────────────────────────────────────────────────────────────
 
@@ -420,7 +420,7 @@ export default function SubRecipesView() {
                       <option value="">— Select —</option>
                       {ingredients.map(i => (
                         <option key={i.id} value={i.id}>
-                          {i.name} ({i.unit}) · {fmtCurrency(i.cost_per_unit)}/{i.unit}
+                          {i.name} ({i.unit}) · {fmtCurrency(i.cost_per_base_unit)}/{i.unit}
                         </option>
                       ))}
                     </select>

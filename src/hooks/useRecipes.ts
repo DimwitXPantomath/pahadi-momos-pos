@@ -28,7 +28,7 @@ export function useRecipes() {
         const { data: itemRows } = await supabase
           .from('recipe_items')
           .select(
-            '*, ingredients(id, name, base_unit, cost_per_base_unit), sub_recipes(id, name, yield_unit, cost_per_unit)'
+            '*, ingredients(id, name, usage_unit, unit, cost_per_usage_unit), sub_recipes(id, name, yield_unit, cost_per_unit)'
           )
           .eq('recipe_id', rec.id)
 
@@ -48,8 +48,8 @@ export function useRecipes() {
               ? {
                   id: ing.id as string,
                   name: ing.name as string,
-                  base_unit: ing.base_unit as 'g' | 'ml' | 'pcs',
-                  cost_per_base_unit: ing.cost_per_base_unit as number,
+                  base_unit: ((ing.usage_unit || ing.unit || 'g') as string) as 'g' | 'ml' | 'pcs',
+                  cost_per_base_unit: (ing.cost_per_usage_unit as number) ?? 0,
                 }
               : undefined,
             sub_recipe: sr

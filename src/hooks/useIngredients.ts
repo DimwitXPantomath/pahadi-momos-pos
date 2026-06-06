@@ -19,7 +19,14 @@ export function useIngredients() {
     if (err) {
       setError(err.message)
     } else {
-      setIngredients((data as Ingredient[]) || [])
+      // Map actual DB columns (usage_unit, cost_per_usage_unit) to the
+      // names the recipe/sub-recipe system expects (base_unit, cost_per_base_unit)
+      const mapped = (data || []).map((row: Record<string, unknown>) => ({
+        ...row,
+        base_unit: (row.usage_unit || row.unit || 'g') as Ingredient['base_unit'],
+        cost_per_base_unit: (row.cost_per_usage_unit as number) ?? 0,
+      }))
+      setIngredients(mapped as Ingredient[])
     }
     setLoading(false)
   }, [])
