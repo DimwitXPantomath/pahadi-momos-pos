@@ -18,7 +18,7 @@ alter table ingredients
   add column if not exists usage_unit text default 'grams',
   add column if not exists min_stock_level decimal default 0;
 
--- Price history per ingredient per procurement
+-- Price history  per ingredient per procurement
 create table if not exists ingredient_price_history (
   id uuid primary key default gen_random_uuid(),
   ingredient_id uuid references ingredients(id),

@@ -1,6 +1,11 @@
 import { useState, useEffect, useRef } from "react"
 import { supabase } from "@/lib/supabase"
 import type { OrderItem } from "@/types/pos"
+import type { StampCard, StampCardProgram } from "@/types/loyalty"
+import { describeReward } from "@/types/loyalty"
+import { fetchStampProgram, lookupCardByPhone } from "@/services/stampCardService"
+
+const OUTLET_ID = "demo-outlet"
 
 export type PrintMode = "KOT" | "BILL" | "KOT+BILL"
 export type PaymentMethod = "CASH" | "CARD" | "UPI" | "DUE" | "SPLIT"
@@ -27,6 +32,9 @@ type Props = {
     customerPhone?: string
     customerName?: string
     splitPayments?: Record<string, number>
+    stampProgramId?: string
+    applyStampReward?: boolean
+    stampCardIdToRedeem?: string
   }) => void
   posMode: "SELF_SERVICE" | "TABLE_SERVICE"
   selectedTable: string | null
@@ -74,6 +82,17 @@ export default function CartPanel({
   const [lookingUp, setLookingUp] = useState(false)
   const lookupTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // ── Stamp card state ────────────────────────────────────────────────
+  const [stampProgram, setStampProgram] = useState<StampCardProgram | null>(null)
+  const [stampCard, setStampCard] = useState<StampCard | null>(null)
+  const [applyStampReward, setApplyStampReward] = useState(false)
+
+  // Load the outlet's active stamp program once — if none is active this whole
+  // block just never renders, no extra queries per phone digit.
+  useEffect(() => {
+    fetchStampProgram(OUTLET_ID).then(p => { if (p?.is_active) setStampProgram(p) })
+  }, [])
+
   // ── Discount calculation ──────────────────────────────────────────
   const discountNum = Number(discountValue) || 0
   const discountAmount = discountType === "percent"
@@ -98,6 +117,8 @@ export default function CartPanel({
     const digits = customerPhone.replace(/\D/g, "")
     if (digits.length < 10) {
       // Don't clear manually typed name
+      setStampCard(null)
+      setApplyStampReward(false)
       return
     }
     lookupTimer.current = setTimeout(async () => {
@@ -110,22 +131,47 @@ export default function CartPanel({
         .maybeSingle()
       if (lc?.name) {
         setCustomerName(lc.name)
-        setLookingUp(false)
-        return
+      } else {
+        // Fallback: look for name in credit_sales history
+        const { data: cs } = await supabase
+          .from("credit_sales")
+          .select("customer_name")
+          .eq("customer_phone", digits)
+          .not("customer_name", "eq", "")
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        if (cs?.customer_name) setCustomerName(cs.customer_name)
       }
-      // Fallback: look for name in credit_sales history
-      const { data: cs } = await supabase
-        .from("credit_sales")
-        .select("customer_name")
-        .eq("customer_phone", digits)
-        .not("customer_name", "eq", "")
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle()
-      if (cs?.customer_name) setCustomerName(cs.customer_name)
+
+      // Stamp card status for this phone, if a program is active
+      if (stampProgram) {
+        const card = await lookupCardByPhone(stampProgram.id, digits, OUTLET_ID)
+        setStampCard(card)
+        setApplyStampReward(false)
+      }
+
       setLookingUp(false)
     }, 600)
-  }, [customerPhone])
+  }, [customerPhone, stampProgram])
+
+  // Auto-fill the discount fields when staff confirms redeeming a discount-type
+  // reward — reuses the existing discount UI instead of a second total-adjustment
+  // path. Complimentary-item rewards don't touch price; staff handles that comp
+  // manually (e.g. zero an item or apply an equivalent discount themselves).
+  useEffect(() => {
+    if (!applyStampReward || !stampProgram) return
+    if (stampProgram.reward_type === "discount_percent") {
+      setDiscountType("percent")
+      setDiscountValue(String(stampProgram.reward_value ?? 0))
+      setShowDiscount(true)
+    } else if (stampProgram.reward_type === "discount_flat") {
+      setDiscountType("fixed")
+      setDiscountValue(String(stampProgram.reward_value ?? 0))
+      setShowDiscount(true)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [applyStampReward])
 
   // ── Place order handler ───────────────────────────────────────────
   const handlePlaceOrder = () => {
@@ -151,6 +197,9 @@ export default function CartPanel({
       customerPhone: customerPhone || undefined,
       customerName: customerName || undefined,
       splitPayments,
+      stampProgramId: stampProgram?.id,
+      applyStampReward: applyStampReward && stampCard?.status === "reward_ready",
+      stampCardIdToRedeem: applyStampReward && stampCard?.status === "reward_ready" ? stampCard.id : undefined,
     })
   }
 
@@ -197,6 +246,33 @@ export default function CartPanel({
           />
         </div>
       </div>
+
+      {/* Stamp card status — only shows once a valid phone is entered and a program is active */}
+      {stampProgram && customerPhone.replace(/\D/g, "").length === 10 && !lookingUp && (
+        <div style={{
+          margin: "8px 16px 0", padding: "8px 12px", borderRadius: 8, flexShrink: 0,
+          background: stampCard?.status === "reward_ready" ? "#fffbeb" : "#f0fdf4",
+          border: `1px solid ${stampCard?.status === "reward_ready" ? "#fde68a" : "#bbf7d0"}`,
+        }}>
+          {!stampCard ? (
+            <span style={{ fontSize: 12, color: "#16a34a" }}>🎟️ New stamp card starts with this order</span>
+          ) : stampCard.status === "reward_ready" ? (
+            <>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12 }}>
+                <span style={{ color: "#92400e", fontWeight: 700 }}>🎁 Reward ready — {describeReward(stampProgram)}</span>
+              </div>
+              <label style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, fontSize: 12, color: "#92400e", cursor: "pointer" }}>
+                <input type="checkbox" checked={applyStampReward} onChange={e => setApplyStampReward(e.target.checked)} />
+                Apply reward to this order
+              </label>
+            </>
+          ) : (
+            <span style={{ fontSize: 12, color: "#16a34a" }}>
+              🎟️ {stampCard.stamps_count}/{stampProgram.stamps_required} stamps — this order adds one more
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Dine-in / Takeaway */}
       {isTableService && (

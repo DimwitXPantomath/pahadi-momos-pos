@@ -5,6 +5,10 @@ import Login from "./pages/Login"
 import OrderTracking from "@/pages/OrderTracking"
 import PrintKOT from "./pages/PrintKOT"
 import PrintBill from "./pages/PrintBill"
+import LoyaltyCard from "@/pages/LoyaltyCard"
+import CustomerSelfOrder from "@/pages/CustomerSelfOrder"
+import DigitalMenu from "@/pages/DigitalMenu"
+import PrintPoster from "@/pages/PrintPoster"
 
 const App = () => {
   return (
@@ -14,6 +18,10 @@ const App = () => {
         <Route path="/order/:id" element={<OrderTracking />} />
         <Route path="/print/kot" element={<PrintKOT />} />
         <Route path="/print/bill" element={<PrintBill />} />
+        <Route path="/loyalty-card/:code" element={<LoyaltyCard />} />
+        <Route path="/order-online/:outletId" element={<CustomerSelfOrder />} />
+        <Route path="/menu/:outletId" element={<DigitalMenu />} />
+        <Route path="/print/poster/:posterId" element={<PrintPoster />} />
         <Route
           path="/"
           element={

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react"
 import { supabase } from "@/lib/supabase"
+import PurchaseSheetTab from "./PurchaseSheetTab"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -67,7 +68,7 @@ const statusColor: Record<string, { bg: string; color: string }> = {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function ProcurementView() {
-  const [tab, setTab] = useState<"requests" | "vendors" | "receive" | "new">("requests")
+  const [tab, setTab] = useState<"requests" | "vendors" | "receive" | "new" | "purchase_sheet">("requests")
 
   // Existing tabs state
   const [requests, setRequests]     = useState<ProcurementRequest[]>([])
@@ -354,6 +355,7 @@ export default function ProcurementView() {
             ["vendors",  "Vendors"],
             ["receive",  "📦 Receive Stock"],
             ["new",      "+ New Request"],
+            ["purchase_sheet", "🧮 Purchase Sheet"],
           ] as const).map(([key, label]) => (
             <button
               key={key}
@@ -907,6 +909,11 @@ export default function ProcurementView() {
             </table>
           </div>
         </div>
+      )}
+
+      {/* ── PURCHASE SHEET (recipe-driven, feeds into a draft request above) ── */}
+      {tab === "purchase_sheet" && (
+        <PurchaseSheetTab outletId="demo-outlet" onCreated={() => { setTab("requests"); load() }} />
       )}
     </div>
   )

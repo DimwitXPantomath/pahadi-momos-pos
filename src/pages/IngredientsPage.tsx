@@ -368,11 +368,22 @@ export default function IngredientsPage() {
                         </td>
                         <td style={{ ...p.td, fontFamily: "monospace" }}>
                           {(() => {
-                            const stock = row.current_stock ?? 0
-                            const unit  = row.usage_unit || row.unit
-                            if (stock === 0) return <span style={{ color: "#ef4444", fontWeight: 700 }}>0 {unit}</span>
-                            if (isLowStock)  return <span style={{ color: "#d97706", fontWeight: 700 }}>{fmt(stock, 1)} {unit}</span>
-                            return <span style={{ color: "#16a34a", fontWeight: 600 }}>{fmt(stock, 1)} {unit}</span>
+                            const stock    = row.current_stock ?? 0
+                            const upp      = row.units_per_purchase > 0 ? row.units_per_purchase : 1
+                            const inPurch  = stock / upp
+                            const dispUnit = row.purchase_unit || row.usage_unit || row.unit
+                            const usageUnit = row.usage_unit || row.unit
+                            const color = stock === 0 ? "#ef4444" : isLowStock ? "#d97706" : "#16a34a"
+                            return (
+                              <div>
+                                <span style={{ color, fontWeight: 700 }}>
+                                  {fmt(inPurch, 2)} {dispUnit}
+                                </span>
+                                <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 1 }}>
+                                  {fmt(stock, 0)} {usageUnit}
+                                </div>
+                              </div>
+                            )
                           })()}
                         </td>
                         <td style={{ ...p.td, fontFamily: "monospace" }}>
@@ -705,12 +716,20 @@ export default function IngredientsPage() {
                 if (row.type === "remove") newQty = Math.max(0, newQty - qty)
                 if (row.type === "set")    newQty = qty
                 const isOk = ing.min_stock_level <= 0 || newQty >= ing.min_stock_level
+                const upp = ing.units_per_purchase > 0 ? ing.units_per_purchase : 1
+                const oldPurch = (ing.current_stock ?? 0) / upp
+                const newPurch = newQty / upp
+                const dispUnit = ing.purchase_unit || ing.usage_unit || ing.unit
                 return (
                   <div key={idx} style={p.previewLine}>
-                    <b>{ing.name}</b>: {fmt(ing.current_stock ?? 0, 1)} → {" "}
+                    <b>{ing.name}</b>:{" "}
+                    {fmt(oldPurch, 2)} {dispUnit} → {" "}
                     <b style={{ color: isOk ? "#16a34a" : "#ef4444" }}>
-                      {fmt(newQty, 1)} {ing.usage_unit || ing.unit}
+                      {fmt(newPurch, 2)} {dispUnit}
                     </b>
+                    <span style={{ fontSize: 11, color: "#9ca3af", marginLeft: 4 }}>
+                      ({fmt(newQty, 0)} {ing.usage_unit || ing.unit})
+                    </span>
                     {!isOk && <span style={{ fontSize: 11, color: "#ef4444", marginLeft: 4 }}>(below min stock)</span>}
                   </div>
                 )

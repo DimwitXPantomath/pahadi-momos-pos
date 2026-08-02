@@ -1,6 +1,13 @@
 import { useState, useEffect } from "react"
 import { supabase } from "@/lib/supabase"
+import QRCode from "react-qr-code"
 import type { POSSettings } from "@/types/pos"
+
+type TableRow = { id: string; name: string }
+const DEFAULT_TABLES: TableRow[] = [
+  { id: "T1", name: "Table 1" }, { id: "T2", name: "Table 2" }, { id: "T3", name: "Table 3" },
+  { id: "T4", name: "Table 4" }, { id: "T5", name: "Table 5" }, { id: "T6", name: "Table 6" },
+]
 
 type Props = {
   settings: POSSettings
@@ -10,6 +17,87 @@ type Props = {
 export default function Settings({ settings, setSettings }: Props) {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+
+  const [tables, setTables] = useState<TableRow[]>(DEFAULT_TABLES)
+  const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [qrOpenId, setQrOpenId] = useState<string | null>(null)
+  const [menuLinkCopied, setMenuLinkCopied] = useState(false)
+  const [menuQrOpen, setMenuQrOpen] = useState(false)
+
+  // Branding — used by the Posters feature (and any future print asset)
+  const [brandName, setBrandName] = useState("Praang")
+  const [logoUrl, setLogoUrl] = useState<string | null>(null)
+  const [primaryColor, setPrimaryColor] = useState("#2D6A4F")
+  const [secondaryColor, setSecondaryColor] = useState("#F4A261")
+  const [brandAddress, setBrandAddress] = useState("")
+  const [brandPhone, setBrandPhone] = useState("")
+  const [fssaiNumber, setFssaiNumber] = useState("")
+  const [brandingSaving, setBrandingSaving] = useState(false)
+  const [brandingSaved, setBrandingSaved] = useState(false)
+  const [uploadingLogo, setUploadingLogo] = useState(false)
+
+  useEffect(() => {
+    supabase.from("tables").select("id, name").eq("outlet_id", "demo-outlet").order("name", { ascending: true })
+      .then(({ data, error }) => { if (!error && data && data.length > 0) setTables(data) })
+      // Falls back to DEFAULT_TABLES on any error — same defensive pattern
+      // usePOSConfig.ts already uses for this same (possibly-missing-from-
+      // migrations) `tables` table.
+  }, [])
+
+  useEffect(() => {
+    supabase.from("outlet_branding").select("*").eq("outlet_id", "demo-outlet").maybeSingle()
+      .then(({ data }) => {
+        if (!data) return
+        setBrandName(data.business_name || "Praang")
+        setLogoUrl(data.logo_url || null)
+        setPrimaryColor(data.primary_color || "#2D6A4F")
+        setSecondaryColor(data.secondary_color || "#F4A261")
+        setBrandAddress(data.address || "")
+        setBrandPhone(data.phone || "")
+        setFssaiNumber(data.fssai_number || "")
+      })
+  }, [])
+
+  const saveBranding = async () => {
+    setBrandingSaving(true)
+    await supabase.from("outlet_branding").upsert({
+      outlet_id: "demo-outlet",
+      business_name: brandName || "Praang",
+      logo_url: logoUrl,
+      primary_color: primaryColor,
+      secondary_color: secondaryColor,
+      address: brandAddress || null,
+      phone: brandPhone || null,
+      fssai_number: fssaiNumber || null,
+      updated_at: new Date().toISOString(),
+    })
+    setBrandingSaving(false)
+    setBrandingSaved(true)
+    setTimeout(() => setBrandingSaved(false), 2000)
+  }
+
+  const handleLogoUpload = async (file: File) => {
+    setUploadingLogo(true)
+    const ext = file.name.split(".").pop()
+    const path = `demo-outlet/logo-${Date.now()}.${ext}`
+    const { error: uploadErr } = await supabase.storage.from("branding").upload(path, file, { upsert: true })
+    if (uploadErr) {
+      alert(`Logo upload failed: ${uploadErr.message}`)
+      setUploadingLogo(false)
+      return
+    }
+    const { data } = supabase.storage.from("branding").getPublicUrl(path)
+    setLogoUrl(data.publicUrl)
+    setUploadingLogo(false)
+  }
+
+  const tableUrl = (tableId: string) => `${window.location.origin}/order-online/demo-outlet?table=${tableId}`
+
+  const copyLink = (tableId: string) => {
+    navigator.clipboard.writeText(tableUrl(tableId))
+    setCopiedId(tableId)
+    setTimeout(() => setCopiedId(null), 1500)
+  }
 
   // Load persisted settings from Supabase on mount
   useEffect(() => {
@@ -155,6 +243,136 @@ export default function Settings({ settings, setSettings }: Props) {
           </div>
         ))}
       </div>
+
+      {/* Branding — feeds the Posters feature and any future print asset.
+          New table (outlet_branding), didn't exist before this. */}
+      <div style={card}>
+        <h3 style={cardTitle}>Branding</h3>
+        <p style={cardDesc}>Your logo, name, and colors — used on hygiene/compliance posters and future print assets.</p>
+
+        <div style={{ display: "flex", gap: 16, alignItems: "flex-start", flexWrap: "wrap", marginBottom: 14 }}>
+          <div style={{ width: 84, height: 84, borderRadius: 10, border: "1.5px dashed #e5e7eb", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, overflow: "hidden", background: "#fafafa" }}>
+            {logoUrl ? <img src={logoUrl} alt="Logo" style={{ width: "100%", height: "100%", objectFit: "contain" }} /> : <span style={{ fontSize: 11, color: "#9ca3af", textAlign: "center", padding: 4 }}>No logo</span>}
+          </div>
+          <div style={{ flex: 1, minWidth: 180 }}>
+            <label style={{ display: "inline-block", padding: "6px 12px", background: "white", border: "1.5px solid #e5e7eb", borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+              {uploadingLogo ? "Uploading…" : "Upload logo"}
+              <input
+                type="file"
+                accept="image/*"
+                onChange={e => { const f = e.target.files?.[0]; if (f) handleLogoUpload(f) }}
+                style={{ display: "none" }}
+                disabled={uploadingLogo}
+              />
+            </label>
+            <p style={{ fontSize: 11, color: "#9ca3af", margin: "6px 0 0" }}>PNG with transparent background works best.</p>
+          </div>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+          <div>
+            <label style={fieldLabel}>Business name</label>
+            <input value={brandName} onChange={e => setBrandName(e.target.value)} style={fieldInput} />
+          </div>
+          <div>
+            <label style={fieldLabel}>FSSAI number (optional)</label>
+            <input value={fssaiNumber} onChange={e => setFssaiNumber(e.target.value)} style={fieldInput} placeholder="14-digit license no." />
+          </div>
+          <div>
+            <label style={fieldLabel}>Phone (optional)</label>
+            <input value={brandPhone} onChange={e => setBrandPhone(e.target.value)} style={fieldInput} />
+          </div>
+          <div>
+            <label style={fieldLabel}>Address (optional)</label>
+            <input value={brandAddress} onChange={e => setBrandAddress(e.target.value)} style={fieldInput} />
+          </div>
+          <div>
+            <label style={fieldLabel}>Primary color</label>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <input type="color" value={primaryColor} onChange={e => setPrimaryColor(e.target.value)} style={{ width: 36, height: 32, border: "1.5px solid #e5e7eb", borderRadius: 6, padding: 2, cursor: "pointer" }} />
+              <input value={primaryColor} onChange={e => setPrimaryColor(e.target.value)} style={fieldInput} />
+            </div>
+          </div>
+          <div>
+            <label style={fieldLabel}>Secondary color</label>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <input type="color" value={secondaryColor} onChange={e => setSecondaryColor(e.target.value)} style={{ width: 36, height: 32, border: "1.5px solid #e5e7eb", borderRadius: 6, padding: 2, cursor: "pointer" }} />
+              <input value={secondaryColor} onChange={e => setSecondaryColor(e.target.value)} style={fieldInput} />
+            </div>
+          </div>
+        </div>
+
+        <button onClick={saveBranding} disabled={brandingSaving} style={{ padding: "8px 16px", background: brandingSaved ? "#16a34a" : "#111", color: "white", border: "none", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+          {brandingSaved ? "✓ Saved" : brandingSaving ? "Saving…" : "Save branding"}
+        </button>
+      </div>
+
+      {/* Digital menu — outlet-level, browse-only, no cart. Different from
+          the per-table ordering links below: this is for a bio-link/table-tent
+          QR that just shows the menu without pushing straight into checkout. */}
+      <div style={card}>
+        <h3 style={cardTitle}>Digital Menu (browse-only)</h3>
+        <p style={cardDesc}>
+          Auto-generated from your live menu — same data as the POS and online ordering, so there's one menu to keep updated, not three.
+          No cart on this page; it links through to online ordering if the customer wants to order.
+        </p>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, border: "1px solid #e5e7eb", borderRadius: 10, padding: "10px 14px" }}>
+          <p style={{ margin: 0, fontSize: 11, color: "#6b7280", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {`${window.location.origin}/menu/demo-outlet`}
+          </p>
+          <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+            <button
+              onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/menu/demo-outlet`); setMenuLinkCopied(true); setTimeout(() => setMenuLinkCopied(false), 1500) }}
+              style={{ padding: "6px 12px", background: menuLinkCopied ? "#16a34a" : "#111", color: "white", border: "none", borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: "pointer" }}
+            >{menuLinkCopied ? "✓ Copied" : "Copy link"}</button>
+            <button
+              onClick={() => setMenuQrOpen(v => !v)}
+              style={{ padding: "6px 12px", background: "white", color: "#111", border: "1.5px solid #e5e7eb", borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: "pointer" }}
+            >{menuQrOpen ? "Hide QR" : "QR"}</button>
+          </div>
+        </div>
+        {menuQrOpen && (
+          <div style={{ display: "flex", justifyContent: "center", marginTop: 12, padding: 12, background: "#fafafa", borderRadius: 8 }}>
+            <QRCode value={`${window.location.origin}/menu/demo-outlet`} size={130} />
+          </div>
+        )}
+      </div>
+
+      {/* Table ordering links — NFC tag / QR source, table-wise navigation */}
+      <div style={card}>
+        <h3 style={cardTitle}>Table Ordering Links (NFC / QR)</h3>
+        <p style={cardDesc}>
+          One link per table opens the online menu pre-selected for that table. Write it to a blank NFC
+          sticker with a free app (e.g. "NFC Tools" on Android/iOS: Write → Add a record → URL/URI → paste
+          the link) and stick one per table. Keep the QR as a fallback — not every phone has NFC on, but every
+          phone has a camera.
+        </p>
+        {tables.map(t => (
+          <div key={t.id} style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: "10px 14px", marginBottom: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+              <div style={{ minWidth: 0 }}>
+                <p style={{ margin: 0, fontWeight: 700, fontSize: 13 }}>{t.name}</p>
+                <p style={{ margin: "2px 0 0", fontSize: 11, color: "#6b7280", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tableUrl(t.id)}</p>
+              </div>
+              <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                <button
+                  onClick={() => copyLink(t.id)}
+                  style={{ padding: "6px 12px", background: copiedId === t.id ? "#16a34a" : "#111", color: "white", border: "none", borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: "pointer" }}
+                >{copiedId === t.id ? "✓ Copied" : "Copy link"}</button>
+                <button
+                  onClick={() => setQrOpenId(qrOpenId === t.id ? null : t.id)}
+                  style={{ padding: "6px 12px", background: "white", color: "#111", border: "1.5px solid #e5e7eb", borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: "pointer" }}
+                >{qrOpenId === t.id ? "Hide QR" : "QR"}</button>
+              </div>
+            </div>
+            {qrOpenId === t.id && (
+              <div style={{ display: "flex", justifyContent: "center", marginTop: 12, padding: 12, background: "#fafafa", borderRadius: 8 }}>
+                <QRCode value={tableUrl(t.id)} size={120} />
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
@@ -165,3 +383,5 @@ const card: React.CSSProperties = {
 }
 const cardTitle: React.CSSProperties = { fontWeight: 700, fontSize: 15, margin: "0 0 4px" }
 const cardDesc: React.CSSProperties = { fontSize: 13, color: "#6b7280", margin: "0 0 14px" }
+const fieldLabel: React.CSSProperties = { display: "block", fontSize: 11, fontWeight: 600, color: "#6b7280", marginBottom: 4 }
+const fieldInput: React.CSSProperties = { width: "100%", padding: "7px 10px", border: "1.5px solid #e5e7eb", borderRadius: 6, fontSize: 13, outline: "none", boxSizing: "border-box" }

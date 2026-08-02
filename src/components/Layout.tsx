@@ -24,6 +24,9 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Settings",        value: "settings",    icon: "⚙️",  roles: ["owner"] },
   { label: "Inventory",      value: "inventory", icon: "📦", roles: ["owner","manager"] },
   { label: "Expenses / P&L", value: "expenses",  icon: "💸", roles: ["owner"] },
+  { label: "Business Setup",  value: "resources", icon: "🚀", roles: ["owner"] },
+  { label: "Checklists",      value: "checklists", icon: "✅", roles: ["owner","manager","staff"] },
+  { label: "Posters",         value: "posters",   icon: "🖼️", roles: ["owner","manager"] },
 ]
 
 type Props = {
@@ -37,8 +40,12 @@ export default function Layout({ view, setView, todayOrderCount }: Props) {
   const { profile, signOut } = useAuth()
   const navigate = useNavigate()
 
+  // Fail closed while profile hasn't loaded yet (was `: true` — showed
+  // every role-gated nav item, including owner-only ones, to anyone
+  // whose profile fetch hadn't resolved). Real enforcement is RLS
+  // (015/016_*.sql); this is just which buttons render.
   const visibleItems = NAV_ITEMS.filter(item =>
-    profile?.role ? item.roles.includes(profile.role) : true
+    profile?.role ? item.roles.includes(profile.role) : false
   )
 
   const handleNav = (value: string) => {
@@ -130,7 +137,7 @@ export default function Layout({ view, setView, todayOrderCount }: Props) {
               <span style={{ fontSize: 22 }}>🌿</span>
               <span style={styles.sidebarTitle}>Praang</span>
             </div>
-            <div style={styles.sidebarRole}>{roleLabel} · {profile?.name || "User"}</div>
+            <div style={styles.sidebarRole}>{roleLabel} · {profile?.full_name || "User"}</div>
           </div>
           <button onClick={() => setOpen(false)} style={styles.closeBtn}>✕</button>
         </div>

@@ -16,13 +16,14 @@ type Props = {
   markReady: (id: string) => void
   collectOrder: (id: string) => void
   updatePayment: (id: string, method: PaymentMethod) => void
+  markPaid: (id: string) => void
 }
 
 type ColumnProps = Props & { title: string; emoji: string; orders: Order[] }
 
 function OrderCard({
   order, settings, getOrderTime, getOrderColor,
-  startPreparing, markReady, collectOrder, updatePayment
+  startPreparing, markReady, collectOrder, updatePayment, markPaid
 }: {
   order: Order
   settings: POSSettings
@@ -32,6 +33,7 @@ function OrderCard({
   markReady: (id: string) => void
   collectOrder: (id: string) => void
   updatePayment: (id: string, method: PaymentMethod) => void
+  markPaid: (id: string) => void
 }) {
   const isCollected = order.status === OrderStatus.COLLECTED
   // Timer stops when collected
@@ -88,7 +90,33 @@ function OrderCard({
         <span style={{ fontWeight: 400, color: "#6b7280", marginLeft: 6 }}>
           · {order.payment_method || selectedPayment}
         </span>
+        {order.order_source === "online" && (
+          <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 10, background: "#eef2ff", color: "#4338ca" }}>
+            🌐 Online
+          </span>
+        )}
+        {/* Was missing for in-store table orders too, not just online ones —
+            staff had no way to see which table an order belongs to from this
+            board at all. Fixed here since it's directly adjacent. */}
+        {order.table_id && (
+          <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 10, background: "#fff7ed", color: "#c2410c" }}>
+            📍 {order.table_id.replace(/^T/i, "Table ")}
+          </span>
+        )}
       </div>
+
+      {/* Online order awaiting payment confirmation — independent of KDS status,
+          so it doesn't block prep/ready/collect. This is what fires the
+          stamp/points for self-ordered orders (see useOrders.ts markPaid). */}
+      {order.order_source === "online" && order.payment_status === "pending" && (
+        <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8, padding: "8px 10px", marginBottom: 8, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <span style={{ fontSize: 11, color: "#92400e", fontWeight: 600 }}>⏳ Payment pending{order.customer_phone ? ` · ${order.customer_phone}` : ""}</span>
+          <button
+            onClick={() => markPaid(order.id)}
+            style={{ padding: "4px 10px", background: "#16a34a", color: "white", border: "none", borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: "pointer" }}
+          >✓ Mark Paid</button>
+        </div>
+      )}
 
       {/* PLACED actions */}
       {order.status === OrderStatus.PLACED && (
@@ -170,7 +198,7 @@ function OrderCard({
   )
 }
 
-function OrderColumn({ title, emoji, orders, settings, getOrderTime, getOrderColor, startPreparing, markReady, collectOrder, updatePayment }: ColumnProps) {
+function OrderColumn({ title, emoji, orders, settings, getOrderTime, getOrderColor, startPreparing, markReady, collectOrder, updatePayment, markPaid }: ColumnProps) {
   const sorted = settings.autoSortOrders
     ? [...orders].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
     : orders
@@ -194,6 +222,7 @@ function OrderColumn({ title, emoji, orders, settings, getOrderTime, getOrderCol
           markReady={markReady}
           collectOrder={collectOrder}
           updatePayment={updatePayment}
+          markPaid={markPaid}
         />
       ))}
     </div>
@@ -203,9 +232,9 @@ function OrderColumn({ title, emoji, orders, settings, getOrderTime, getOrderCol
 export default function OrderBoard({
   placedOrders, preparingOrders, readyOrders, collectedOrders,
   settings, getOrderTime, getOrderColor,
-  startPreparing, markReady, collectOrder, updatePayment,
+  startPreparing, markReady, collectOrder, updatePayment, markPaid,
 }: Props) {
-  const shared = { settings, getOrderTime, getOrderColor, startPreparing, markReady, collectOrder, updatePayment }
+  const shared = { settings, getOrderTime, getOrderColor, startPreparing, markReady, collectOrder, updatePayment, markPaid }
 
   return (
     <div>

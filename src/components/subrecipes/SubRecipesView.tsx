@@ -1,13 +1,17 @@
 import { useState, useEffect, useCallback } from "react"
 import { supabase } from "@/lib/supabase"
+import { CUT_STYLES, HEAT_LEVELS, HEAT_LABELS, type HeatLevel } from "@/types/cuts"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+// Real schema (001_initial_schema.sql + 011_recipe_sop_fields.sql). The
+// previous version of this file queried `ingredients.cost_per_base_unit`,
+// which doesn't exist (real column is cost_per_usage_unit) — fixed here.
 
 interface Ingredient {
   id: string
   name: string
   unit: string
-  cost_per_base_unit: number
+  cost_per_usage_unit: number
 }
 
 interface SubRecipe {
@@ -16,6 +20,10 @@ interface SubRecipe {
   yield_qty: number
   unit: string
   description: string
+  dos: string | null
+  donts: string | null
+  remarks: string | null
+  cooking_technique: string | null
 }
 
 interface SubRecipeItem {
@@ -30,6 +38,9 @@ interface SubRecipeItem {
   usable_qty: number
   wastage: number
   line_cost: number
+  cut_style: string | null
+  heat_level: HeatLevel | null
+  timing_note: string | null
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -54,18 +65,24 @@ export default function SubRecipesView() {
   const [success, setSuccess] = useState("")
   const [showForm, setShowForm] = useState(false)
 
-  // ── Create form — yield qty/unit moved to bottom, optional ────────────────
   const [srForm, setSrForm] = useState({
     name: "",
     description: "",
     unit: "g",
-    yield_qty: "",         // optional — will auto-calculate from ingredients if blank
+    yield_qty: "",
   })
-  const [addForm, setAddForm] = useState({ ingredient_id: "", quantity: "", yield_percent: "100" })
+  const [addForm, setAddForm] = useState({
+    ingredient_id: "", quantity: "", yield_percent: "100",
+    cut_style: "", heat_level: "" as HeatLevel | "", timing_note: "",
+  })
 
-  // ── Yield override in builder (per-session, not persisted unless "Save" is clicked) ─
   const [yieldOverride, setYieldOverride] = useState<string>("")
   const [savingYield, setSavingYield] = useState(false)
+
+  // ── SOP notes ─────────────────────────────────────────────────────────────
+  const [sopForm, setSopForm] = useState({ dos: "", donts: "", remarks: "", cooking_technique: "" })
+  const [sopSaving, setSopSaving] = useState(false)
+  const [sopSaved, setSopSaved] = useState(false)
 
   // ── Fetchers ───────────────────────────────────────────────────────────────
 
@@ -83,32 +100,40 @@ export default function SubRecipesView() {
   const fetchIngredients = useCallback(async () => {
     const { data } = await supabase
       .from("ingredients")
-      .select("id, name, unit, cost_per_base_unit")
+      .select("id, name, usage_unit, unit, cost_per_usage_unit")
       .order("name")
-    setIngredients(data || [])
+    setIngredients((data || []).map((row: any) => ({
+      id: row.id,
+      name: row.name,
+      unit: row.usage_unit || row.unit || "g",
+      cost_per_usage_unit: row.cost_per_usage_unit ?? 0,
+    })))
   }, [])
 
   const fetchItems = useCallback(async (id: string) => {
     const { data } = await supabase
       .from("sub_recipe_items")
-      .select(`id, sub_recipe_id, ingredient_id, quantity, yield_percent, wastage, ingredients(name, unit, cost_per_base_unit)`)
+      .select(`id, sub_recipe_id, ingredient_id, quantity, yield_percent, wastage, cut_style, heat_level, timing_note, ingredients(name, usage_unit, unit, cost_per_usage_unit)`)
       .eq("sub_recipe_id", id)
 
     const mapped: SubRecipeItem[] = (data || []).map((row: any) => {
-      const costPer = row.ingredients?.cost_per_base_unit ?? 0
+      const costPer = row.ingredients?.cost_per_usage_unit ?? 0
       const usable = row.quantity * (row.yield_percent / 100)
       return {
         id: row.id,
         sub_recipe_id: row.sub_recipe_id,
         ingredient_id: row.ingredient_id,
         ingredient_name: row.ingredients?.name ?? "Unknown",
-        ingredient_unit: row.ingredients?.unit ?? "",
+        ingredient_unit: row.ingredients?.usage_unit || row.ingredients?.unit || "",
         ingredient_cost_per_unit: costPer,
         quantity: row.quantity,
         yield_percent: row.yield_percent,
         usable_qty: usable,
         wastage: row.quantity - usable,
         line_cost: costPer * row.quantity,
+        cut_style: row.cut_style ?? null,
+        heat_level: row.heat_level ?? null,
+        timing_note: row.timing_note ?? null,
       }
     })
     setItems(mapped)
@@ -118,7 +143,13 @@ export default function SubRecipesView() {
   useEffect(() => {
     if (selected) {
       fetchItems(selected.id)
-      setYieldOverride("")  // reset override when switching sub-recipe
+      setYieldOverride("")
+      setSopForm({
+        dos: selected.dos ?? "",
+        donts: selected.donts ?? "",
+        remarks: selected.remarks ?? "",
+        cooking_technique: selected.cooking_technique ?? "",
+      })
     } else {
       setItems([])
     }
@@ -127,13 +158,8 @@ export default function SubRecipesView() {
   // ── Computed ───────────────────────────────────────────────────────────────
 
   const totalCost = items.reduce((sum, i) => sum + i.line_cost, 0)
-  // Auto-calculated yield = sum of all INPUT quantities
   const autoYield = items.reduce((sum, i) => sum + i.quantity, 0)
-  // If user has typed an override, use that; otherwise use auto
-  const effectiveYield = parseFloat(yieldOverride) > 0
-    ? parseFloat(yieldOverride)
-    : autoYield
-  // Cost per yield unit
+  const effectiveYield = parseFloat(yieldOverride) > 0 ? parseFloat(yieldOverride) : autoYield
   const costPerYieldUnit = effectiveYield > 0 ? totalCost / effectiveYield : 0
 
   const previewQty = parseFloat(addForm.quantity) || 0
@@ -141,14 +167,13 @@ export default function SubRecipesView() {
   const previewIng = ingredients.find(i => i.id === addForm.ingredient_id)
   const previewUsable = previewQty * (previewYield / 100)
   const previewWastage = previewQty - previewUsable
-  const previewCost = (previewIng?.cost_per_base_unit ?? 0) * previewQty
+  const previewCost = (previewIng?.cost_per_usage_unit ?? 0) * previewQty
 
   // ── Actions ────────────────────────────────────────────────────────────────
 
   async function handleCreate() {
     if (!srForm.name.trim()) { setError("Name is required"); return }
     setSaving(true); setError("")
-    // yield_qty must be > 0 (DB constraint). Use entered value or default 1.
     const yieldQty = parseFloat(srForm.yield_qty) > 0 ? parseFloat(srForm.yield_qty) : 1
     const { data, error } = await supabase
       .from("sub_recipes")
@@ -184,10 +209,13 @@ export default function SubRecipesView() {
       quantity: qty,
       yield_percent: yp,
       wastage: qty - usable,
+      cut_style: addForm.cut_style || null,
+      heat_level: addForm.heat_level || null,
+      timing_note: addForm.timing_note.trim() || null,
     })
     if (error) { setError(error.message); setSaving(false); return }
     setSuccess("Ingredient added!")
-    setAddForm({ ingredient_id: "", quantity: "", yield_percent: "100" })
+    setAddForm({ ingredient_id: "", quantity: "", yield_percent: "100", cut_style: "", heat_level: "", timing_note: "" })
     fetchItems(selected.id)
     setTimeout(() => setSuccess(""), 2000)
     setSaving(false)
@@ -225,6 +253,25 @@ export default function SubRecipesView() {
     fetchSubRecipes()
   }
 
+  async function handleSaveSop() {
+    if (!selected) return
+    setSopSaving(true)
+    const { error } = await supabase
+      .from("sub_recipes")
+      .update({
+        dos: sopForm.dos.trim() || null,
+        donts: sopForm.donts.trim() || null,
+        remarks: sopForm.remarks.trim() || null,
+        cooking_technique: sopForm.cooking_technique.trim() || null,
+      })
+      .eq("id", selected.id)
+    setSopSaving(false)
+    if (error) { setError(error.message); return }
+    setSopSaved(true)
+    setTimeout(() => setSopSaved(false), 1500)
+    fetchSubRecipes()
+  }
+
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
@@ -232,7 +279,7 @@ export default function SubRecipesView() {
 
       <div style={s.header}>
         <div>
-          <h2 style={s.title}>🥣 Sub Recipes</h2>
+          <h2 style={s.title}>🥣 Sub Recipes & SOPs</h2>
           <p style={s.subtitle}>
             Build reusable prep components · add them to any main recipe without re-entering ingredients
           </p>
@@ -245,12 +292,10 @@ export default function SubRecipesView() {
       {error && <div style={s.errorBanner}>⚠️ {error}</div>}
       {success && <div style={s.successBanner}>✅ {success}</div>}
 
-      {/* Create form — Name & Description first, yield qty/unit at bottom */}
       {showForm && (
         <div style={s.card}>
           <div style={s.cardTitle}>➕ New Sub Recipe</div>
 
-          {/* Row 1: Name + Description */}
           <div style={s.grid2}>
             <div style={s.field}>
               <label style={s.label}>Name *</label>
@@ -264,7 +309,6 @@ export default function SubRecipesView() {
             </div>
           </div>
 
-          {/* Row 2 (bottom): Yield unit + Yield qty — optional */}
           <div style={{ ...s.grid2, marginTop: 4 }}>
             <div style={s.field}>
               <label style={s.label}>Yield Unit</label>
@@ -296,10 +340,8 @@ export default function SubRecipesView() {
         </div>
       )}
 
-      {/* Split layout */}
       <div style={s.split}>
 
-        {/* LEFT: list */}
         <div style={s.leftPanel}>
           <div style={s.panelHead}>
             <span style={{ fontWeight: 700, fontSize: 14 }}>Sub Recipes</span>
@@ -328,7 +370,6 @@ export default function SubRecipesView() {
           )}
         </div>
 
-        {/* RIGHT: builder */}
         <div style={s.rightPanel}>
           {!selected ? (
             <div style={s.emptyBuilder}>
@@ -340,7 +381,6 @@ export default function SubRecipesView() {
             </div>
           ) : (
             <>
-              {/* Header */}
               <div style={s.builderHead}>
                 <div>
                   <div style={{ fontSize: 17, fontWeight: 800 }}>{selected.name}</div>
@@ -357,7 +397,6 @@ export default function SubRecipesView() {
                 </div>
               </div>
 
-              {/* Yield calculator strip — always visible when ingredients exist */}
               {items.length > 0 && (
                 <div style={s.yieldStrip}>
                   <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
@@ -414,19 +453,19 @@ export default function SubRecipesView() {
                 <div style={s.cardTitle}>➕ Add Ingredient</div>
                 <div style={s.grid3}>
                   <div style={s.field}>
-                    <label style={s.label}>Ingredient *</label>
+                    <label style={s.label}>Ingredient (from master list) *</label>
                     <select style={s.input} value={addForm.ingredient_id}
                       onChange={e => setAddForm(f => ({ ...f, ingredient_id: e.target.value }))}>
                       <option value="">— Select —</option>
                       {ingredients.map(i => (
                         <option key={i.id} value={i.id}>
-                          {i.name} ({i.unit}) · {fmtCurrency(i.cost_per_base_unit)}/{i.unit}
+                          {i.name} ({i.unit}) · {fmtCurrency(i.cost_per_usage_unit)}/{i.unit}
                         </option>
                       ))}
                     </select>
                   </div>
                   <div style={s.field}>
-                    <label style={s.label}>Qty ({previewIng?.unit || "unit"}) *</label>
+                    <label style={s.label}>Usage ({previewIng?.unit || "unit"}) *</label>
                     <input style={s.input} type="number" min="0" step="0.01"
                       placeholder="e.g. 200" value={addForm.quantity}
                       onChange={e => setAddForm(f => ({ ...f, quantity: e.target.value }))} />
@@ -436,6 +475,31 @@ export default function SubRecipesView() {
                     <input style={s.input} type="number" min="1" max="100" step="0.1"
                       value={addForm.yield_percent}
                       onChange={e => setAddForm(f => ({ ...f, yield_percent: e.target.value }))} />
+                  </div>
+                </div>
+
+                <div style={s.grid3}>
+                  <div style={s.field}>
+                    <label style={s.label}>Cut style (optional)</label>
+                    <select style={s.input} value={addForm.cut_style}
+                      onChange={e => setAddForm(f => ({ ...f, cut_style: e.target.value }))}>
+                      <option value="">— Not applicable —</option>
+                      {CUT_STYLES.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
+                  <div style={s.field}>
+                    <label style={s.label}>Heat</label>
+                    <select style={s.input} value={addForm.heat_level}
+                      onChange={e => setAddForm(f => ({ ...f, heat_level: e.target.value as HeatLevel | "" }))}>
+                      <option value="">— None —</option>
+                      {HEAT_LEVELS.map(h => <option key={h} value={h}>{HEAT_LABELS[h]}</option>)}
+                    </select>
+                  </div>
+                  <div style={s.field}>
+                    <label style={s.label}>When to add</label>
+                    <input style={s.input} placeholder="e.g. Add at 2 min / after roux browns"
+                      value={addForm.timing_note}
+                      onChange={e => setAddForm(f => ({ ...f, timing_note: e.target.value }))} />
                   </div>
                 </div>
 
@@ -465,7 +529,7 @@ export default function SubRecipesView() {
                   <table style={s.table}>
                     <thead>
                       <tr>
-                        {["Ingredient", "Input Qty", "Yield %", "Usable", "Wastage", "₹/unit", "Line Cost", ""].map(h => (
+                        {["Ingredient", "Cut", "Heat", "When to add", "Usage", "Yield %", "Usable", "Wastage", "₹/unit", "Line Cost", ""].map(h => (
                           <th key={h} style={s.th}>{h}</th>
                         ))}
                       </tr>
@@ -474,6 +538,9 @@ export default function SubRecipesView() {
                       {items.map((item, i) => (
                         <tr key={item.id} style={{ background: i % 2 === 0 ? "white" : "#f9fafb" }}>
                           <td style={{ ...s.td, fontWeight: 600 }}>{item.ingredient_name}</td>
+                          <td style={{ ...s.td, fontSize: 12, color: "#6b7280" }}>{item.cut_style || "—"}</td>
+                          <td style={{ ...s.td, fontSize: 12 }}>{item.heat_level ? HEAT_LABELS[item.heat_level] : "—"}</td>
+                          <td style={{ ...s.td, fontSize: 12, color: "#6b7280" }}>{item.timing_note || "—"}</td>
                           <td style={{ ...s.td, textAlign: "right" }}>{fmt(item.quantity)} {item.ingredient_unit}</td>
                           <td style={{ ...s.td, textAlign: "right" }}>
                             <span style={{ ...s.yieldBadge, background: item.yield_percent >= 90 ? "#dcfce7" : item.yield_percent >= 70 ? "#fef9c3" : "#fee2e2", color: item.yield_percent >= 90 ? "#166534" : item.yield_percent >= 70 ? "#854d0e" : "#991b1b" }}>
@@ -498,7 +565,7 @@ export default function SubRecipesView() {
                         </tr>
                       ))}
                       <tr style={{ background: "#f0fdf4", borderTop: "2px solid #bbf7d0" }}>
-                        <td colSpan={6} style={{ ...s.td, fontWeight: 700 }}>
+                        <td colSpan={9} style={{ ...s.td, fontWeight: 700 }}>
                           Total · {items.length} ingredient{items.length !== 1 ? "s" : ""}
                         </td>
                         <td style={{ ...s.td, textAlign: "right", fontWeight: 800, fontSize: 16, color: "#16a34a" }}>
@@ -507,7 +574,7 @@ export default function SubRecipesView() {
                         <td style={s.td} />
                       </tr>
                       <tr style={{ background: "#f0fdf4" }}>
-                        <td colSpan={6} style={{ ...s.td, color: "#6b7280", fontSize: 13 }}>
+                        <td colSpan={9} style={{ ...s.td, color: "#6b7280", fontSize: 13 }}>
                           Cost per {selected.unit} · using {parseFloat(yieldOverride) > 0 ? `override ${fmt(parseFloat(yieldOverride), 1)}` : `auto ${fmt(autoYield, 1)}`} {selected.unit}
                         </td>
                         <td style={{ ...s.td, textAlign: "right", fontWeight: 800, color: "#16a34a" }}>
@@ -519,6 +586,41 @@ export default function SubRecipesView() {
                   </table>
                 </div>
               )}
+
+              {/* SOP notes */}
+              <div style={{ padding: "16px 18px" }}>
+                <div style={s.cardTitle}>📋 Sub Recipe SOP</div>
+                <div style={s.grid2}>
+                  <div style={s.field}>
+                    <label style={s.label}>Do's</label>
+                    <textarea style={s.textarea} rows={4} placeholder="e.g. Whisk constantly to avoid lumps"
+                      value={sopForm.dos} onChange={e => setSopForm(f => ({ ...f, dos: e.target.value }))} />
+                  </div>
+                  <div style={s.field}>
+                    <label style={s.label}>Don'ts</label>
+                    <textarea style={s.textarea} rows={4} placeholder="e.g. Don't let it boil"
+                      value={sopForm.donts} onChange={e => setSopForm(f => ({ ...f, donts: e.target.value }))} />
+                  </div>
+                </div>
+                <div style={s.grid2}>
+                  <div style={s.field}>
+                    <label style={s.label}>Remarks</label>
+                    <textarea style={s.textarea} rows={3} placeholder="Any other notes for the kitchen"
+                      value={sopForm.remarks} onChange={e => setSopForm(f => ({ ...f, remarks: e.target.value }))} />
+                  </div>
+                  <div style={s.field}>
+                    <label style={s.label}>Cooking technique</label>
+                    <textarea style={s.textarea} rows={3} placeholder="e.g. Roux-based, emulsify off heat..."
+                      value={sopForm.cooking_technique} onChange={e => setSopForm(f => ({ ...f, cooking_technique: e.target.value }))} />
+                  </div>
+                </div>
+                <div style={s.btnRow}>
+                  <button style={{ ...s.primaryBtn, opacity: sopSaving ? 0.7 : 1, background: sopSaved ? "#16a34a" : "#111" }}
+                    onClick={handleSaveSop} disabled={sopSaving}>
+                    {sopSaving ? "Saving…" : sopSaved ? "✓ Saved!" : "Save SOP Notes"}
+                  </button>
+                </div>
+              </div>
             </>
           )}
         </div>
@@ -530,7 +632,7 @@ export default function SubRecipesView() {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const s: Record<string, React.CSSProperties> = {
-  page: { padding: "16px 16px 80px", maxWidth: 1200, margin: "0 auto" },
+  page: { padding: "16px 16px 80px", maxWidth: 1300, margin: "0 auto" },
   header: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 },
   title: { fontSize: 22, fontWeight: 800, color: "#111", margin: 0 },
   subtitle: { fontSize: 13, color: "#6b7280", marginTop: 4, maxWidth: 500 },
@@ -552,6 +654,7 @@ const s: Record<string, React.CSSProperties> = {
   field: { display: "flex", flexDirection: "column", gap: 4 },
   label: { fontSize: 11, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.5px" },
   input: { height: 40, padding: "0 12px", border: "1px solid #d1d5db", borderRadius: 8, fontSize: 14, color: "#111", background: "#fafafa", outline: "none", width: "100%", boxSizing: "border-box" },
+  textarea: { padding: "10px 12px", border: "1px solid #d1d5db", borderRadius: 8, fontSize: 13, color: "#111", background: "#fafafa", outline: "none", width: "100%", boxSizing: "border-box", fontFamily: "system-ui", resize: "vertical" as const },
   previewStrip: { background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, padding: "8px 14px", fontSize: 13, color: "#374151", marginTop: 6 },
   btnRow: { display: "flex", justifyContent: "flex-end", marginTop: 12 },
   primaryBtn: { height: 44, padding: "0 20px", background: "#111", color: "white", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: "pointer" },

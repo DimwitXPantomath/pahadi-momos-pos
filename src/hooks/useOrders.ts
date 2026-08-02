@@ -2,6 +2,7 @@ import { useState, useRef, useCallback } from "react"
 import { supabase } from "@/lib/supabase"
 import { OrderStatus } from "@/types/pos"
 import type { Order } from "@/types/pos"
+import { fetchStampProgram, addStamp } from "@/services/stampCardService"
 
 const OUTLET_ID = "demo-outlet"
 
@@ -35,10 +36,17 @@ export const useOrders = () => {
   }, [])
 
   // ── Realtime subscription ────────────────────────────────────────
+  // Was unfiltered — every browser with this POS open received every
+  // order change on the entire platform, not just this outlet's. Now
+  // scoped both here (so the client doesn't even ask for other outlets'
+  // changes) and at the RLS layer (015_tenant_scoped_rls.sql — Realtime
+  // won't deliver a row a session's RLS policy wouldn't let it SELECT,
+  // so this is defense in depth, not the only thing stopping cross-
+  // tenant delivery).
   const subscribeToOrders = useCallback(() => {
     const channel = supabase
       .channel("orders-channel")
-      .on("postgres_changes", { event: "*", schema: "public", table: "orders" }, (payload) => {
+      .on("postgres_changes", { event: "*", schema: "public", table: "orders", filter: `outlet_id=eq.${OUTLET_ID}` }, (payload) => {
         const newOrder = payload.new as Order
         if (payload.eventType === "INSERT") {
           setOrders(prev => prev.some(o => o.id === newOrder.id) ? prev : [newOrder, ...prev])
@@ -129,6 +137,61 @@ export const useOrders = () => {
     if (data) setOrders(prev => prev.map(o => o.id === orderId ? data : o))
   }
 
+  // ── Mark an online order's payment as confirmed ──────────────────
+  // This is the actual trigger for stamps/points on self-ordered (online)
+  // orders — there's no payment gateway in this app, so a staff member
+  // confirming payment in person is what stands in for it. The
+  // .eq("payment_status", "pending") guard means a double-click (or two
+  // staff clicking at once) only fires the reward once: the second update
+  // matches zero rows and .single() returns no data, so nothing double-fires.
+  const markPaid = async (orderId: string) => {
+    const { data, error } = await supabase
+      .from("orders")
+      .update({ payment_status: "paid" })
+      .eq("id", orderId)
+      .eq("payment_status", "pending")
+      .select()
+      .single()
+
+    if (error) { console.error("markPaid error:", error); return }
+    if (!data) return // already paid — nothing to do
+
+    setOrders(prev => prev.map(o => o.id === orderId ? data : o))
+
+    if (!data.customer_phone) return
+
+    try {
+      const [{ data: loyaltySettings }, stampProgram] = await Promise.all([
+        supabase.from("loyalty_settings").select("points_per_100, is_active").eq("outlet_id", data.outlet_id).maybeSingle(),
+        fetchStampProgram(data.outlet_id),
+      ])
+
+      if (loyaltySettings?.is_active) {
+        const pointsEarned = Math.floor((data.total ?? 0) / 100 * (loyaltySettings.points_per_100 ?? 10))
+        if (pointsEarned > 0) {
+          await supabase.from("loyalty_transactions").insert({
+            outlet_id: data.outlet_id,
+            customer_phone: data.customer_phone,
+            type: "earned",
+            points: pointsEarned,
+            order_id: data.id,
+          }).then(({ error: e }) => { if (e) console.warn("markPaid points log error (non-fatal):", e.message) })
+        }
+      }
+
+      if (stampProgram?.is_active) {
+        await addStamp({
+          programId: stampProgram.id,
+          customerPhone: data.customer_phone,
+          customerName: data.customer_name ?? undefined,
+          orderId: data.id,
+        })
+      }
+    } catch (err) {
+      console.warn("markPaid loyalty error (non-fatal):", err)
+    }
+  }
+
   // ── Update payment ───────────────────────────────────────────────
   const updatePayment = async (orderId: string, method: "CASH" | "CARD" | "UPI") => {
     const { data, error } = await supabase
@@ -174,7 +237,7 @@ export const useOrders = () => {
     alertedOrdersRef,
     placedOrders, preparingOrders, readyOrders, collectedOrders,
     fetchOrders, subscribeToOrders,
-    startPreparing, markReady, collectOrder, updatePayment,
+    startPreparing, markReady, collectOrder, updatePayment, markPaid,
     getOrderTime, getOrderColor,
   }
 }

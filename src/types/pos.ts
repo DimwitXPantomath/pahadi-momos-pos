@@ -74,6 +74,13 @@ export type Order = {
   // payment
   payment_method?: "CASH" | "CARD" | "UPI"
 
+  // online self-order (see supabase/migrations/010_online_ordering_and_loyalty_toggle.sql)
+  order_source?: "pos" | "online"
+  payment_status?: "pending" | "paid"
+  customer_phone?: string | null
+  customer_name?: string | null
+  table_id?: string | null
+
   // optional
   tableNumber?: number | null
   rating?: number | null

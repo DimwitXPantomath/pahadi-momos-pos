@@ -19,15 +19,19 @@ import { useMenu } from "@/hooks/useMenu"
 import { usePOSConfig } from "@/hooks/usePOSConfig"
 import { printKOT } from "@/utils/printKOT"
 import { expandRecipe, updateStock } from "@/services/inventoryService"
+import { addStamp, redeemStampCard } from "@/services/stampCardService"
 import InventoryView from "@/components/inventory/InventoryView"
 import ProcurementView from "@/components/procurement/ProcurementView"
 import MISView from "@/components/mis/MISView"
 import LoyaltyView from "@/components/loyalty/LoyaltyView"
-import SubRecipesPage from "@/pages/SubRecipesPage"
-import RecipesPage from "@/pages/RecipesPage"
+import SubRecipesView from "@/components/subrecipes/SubRecipesView"
+import RecipesView from "@/components/recipes/RecipesView"
 import ExpensesView from "@/components/expenses/ExpensesView"
 import ProductionPage from "@/pages/ProductionPage"
 import ExpiryAlarmModal from "@/components/ExpiryAlarmModal"
+import BusinessResourcesView from "@/components/resources/BusinessResourcesView"
+import ChecklistsView from "@/components/checklists/ChecklistsView"
+import PostersView from "@/components/posters/PostersView"
 
 const OUTLET_ID = "demo-outlet"
 
@@ -47,6 +51,9 @@ type View =
   | "inventory"
   | "expenses"
   | "production"
+  | "resources"
+  | "checklists"
+  | "posters"
 
 type PaymentMethod = "CASH" | "CARD" | "UPI"
 
@@ -67,7 +74,7 @@ export default function Index() {
     qrOrderId, setQrOrderId, alertedOrdersRef,
     placedOrders, preparingOrders, readyOrders, collectedOrders,
     fetchOrders, subscribeToOrders,
-    startPreparing, markReady, collectOrder, updatePayment,
+    startPreparing, markReady, collectOrder, updatePayment, markPaid,
     getOrderTime, getOrderColor,
   } = useOrders()
 
@@ -188,6 +195,7 @@ export default function Index() {
     payment?: string; dueAmount?: number
     customerName?: string; customerPhone?: string
     splitPayments?: Record<string, number>
+    stampProgramId?: string; applyStampReward?: boolean; stampCardIdToRedeem?: string
   }) => {
     if (cart.length === 0) { alert("Cart empty"); return }
     if (isPlacingOrder) return
@@ -218,6 +226,10 @@ export default function Index() {
       notes: opts?.orderNotes || orderNotes || null,
       loyalty_points_earned: Math.floor(finalTotal / 100),
       loyalty_points_used: 0,
+      customer_phone: opts?.customerPhone || null,
+      customer_name: opts?.customerName || null,
+      // order_source/payment_status default to 'pos'/'paid' in the DB — this
+      // is the in-store checkout path, payment already happened at the counter.
       // Do NOT include created_at — let Supabase default set it server-side
       ...(selectedTable ? { table_id: selectedTable } : {}),
       ...(orderType ? { order_type: orderType } : {}),
@@ -276,11 +288,12 @@ export default function Index() {
       })
     }
 
-    // ── Auto-earn loyalty points ────────────────────────────────────
-    // Load loyalty settings for this outlet
+    // ── Auto-earn loyalty points — only when the outlet has this program
+    // switched on. Points and stamps are independent toggles now (an outlet
+    // can run neither, either, or both), not one always-on legacy behavior.
     const { data: loyaltySettings } = await supabase
       .from("loyalty_settings")
-      .select("points_per_100")
+      .select("points_per_100, is_active")
       .eq("outlet_id", OUTLET_ID)
       .maybeSingle()
 
@@ -288,7 +301,7 @@ export default function Index() {
 
     // Only log if a customer phone was provided (future: prompt at checkout)
     // For now log with a placeholder — real phone comes from customer QR scan
-    if (pointsEarned > 0) {
+    if (loyaltySettings?.is_active && pointsEarned > 0) {
       await supabase.from("loyalty_transactions").insert({
         outlet_id: OUTLET_ID,
         customer_phone: opts?.customerPhone || "walk-in",
@@ -298,6 +311,31 @@ export default function Index() {
       }).then(({ error }) => {
         if (error) console.warn("Loyalty log error (non-fatal):", error.message)
       })
+    }
+
+    // ── Stamp card program — redeem first (if staff confirmed a reward),
+    // then add this visit's stamp on the now-fresh card. Both calls hit the
+    // atomic add_stamp/redeem_stamp_card RPCs, not a client read-then-write,
+    // so two checkouts for the same phone can't race the count.
+    if (opts?.stampProgramId && opts?.customerPhone) {
+      try {
+        if (opts.applyStampReward && opts.stampCardIdToRedeem) {
+          const { error: redeemErr } = await redeemStampCard({
+            cardId: opts.stampCardIdToRedeem,
+            orderId: data.id,
+            staffNote: "Redeemed at checkout",
+          })
+          if (redeemErr) console.warn("Stamp redeem error (non-fatal):", redeemErr)
+        }
+        await addStamp({
+          programId: opts.stampProgramId,
+          customerPhone: opts.customerPhone,
+          customerName: opts.customerName,
+          orderId: data.id,
+        })
+      } catch (stampErr) {
+        console.warn("Stamp card error (non-fatal):", stampErr)
+      }
     }
 
     // Print based on selected mode
@@ -597,6 +635,7 @@ export default function Index() {
           markReady={markReady}
           collectOrder={collectOrder}
           updatePayment={updatePayment}
+          markPaid={markPaid}
         />
       )}
 
@@ -843,9 +882,9 @@ export default function Index() {
 
       {view === "analytics" && <MISView />}
 
-      {view === "subrecipes" && <SubRecipesPage />}
+      {view === "subrecipes" && <SubRecipesView />}
 
-      {view === "recipes" && <RecipesPage />}
+      {view === "recipes" && <RecipesView />}
 
 
       {/* LOYALTY VIEW */}
@@ -927,6 +966,12 @@ export default function Index() {
       {view === "inventory" && <InventoryView />}
 
       {view === "production" && <ProductionPage />}
+
+      {view === "resources" && <BusinessResourcesView />}
+
+      {view === "checklists" && <ChecklistsView />}
+
+      {view === "posters" && <PostersView />}
 
       {/* EXPENSES VIEW */}
       {view === "expenses" && <ExpensesView />}

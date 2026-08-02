@@ -4,9 +4,8 @@ import type { User } from "@supabase/supabase-js"
 
 type Profile = {
   id: string
-  name: string
+  full_name: string | null
   role: "owner" | "manager" | "staff"
-  brand_id: string | null
   outlet_id: string | null
 }
 
@@ -39,12 +38,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (error) {
         if (error.code === "PGRST116") {
-          // Profile doesn't exist — create one
-          const { data: newProfile } = await supabase
+          // Profile doesn't exist — create one.
+          // SECURITY: role/outlet_id here MUST match exactly what
+          // 016_profiles_lockdown.sql's insert_own_profile RLS policy
+          // allows (role='staff', outlet_id='demo-outlet') — the policy
+          // is the real enforcement, this is just so a legitimate new
+          // sign-up doesn't hit an RLS rejection here. A brand-new
+          // account is never auto-granted 'owner' anymore; an existing
+          // owner promotes staff via admin_update_staff_role().
+          // Also fixed: this used to insert `name`, a column that has
+          // never existed on `profiles` (the real column is
+          // `full_name`) — every new sign-up's profile insert was
+          // silently failing before this fix.
+          const { data: newProfile, error: insertErr } = await supabase
             .from("profiles")
-            .insert({ id: userId, role: "owner", name: "Owner" })
+            .insert({ id: userId, role: "staff", outlet_id: "demo-outlet", full_name: "New User" })
             .select()
             .single()
+          if (insertErr) {
+            console.error("Profile provisioning failed:", insertErr)
+            return null
+          }
           return newProfile as Profile
         }
         return null
@@ -91,11 +105,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (session?.user) {
           setUser(session.user)
           if (event === "SIGNED_IN") {
+            // Was also caching the full profile (including role) in
+            // localStorage — nothing else in the app reads it back, and
+            // an XSS payload or shared-machine session could read a
+            // stale role/outlet_id out of it. Removed; profile is
+            // refetched from Supabase on every session load anyway.
             fetchProfile(session.user.id).then(prof => {
-              if (mounted) {
-                setProfile(prof)
-                if (prof) localStorage.setItem("praang_profile", JSON.stringify(prof))
-              }
+              if (mounted) setProfile(prof)
             })
           }
         }
@@ -112,7 +128,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await supabase.auth.signOut()
     setUser(null)
     setProfile(null)
-    localStorage.removeItem("praang_profile")
   }
 
   return (

@@ -132,7 +132,15 @@ export default function OrderTracking() {
     if (wasReady) notifyReady(newOrder.token_no)
   }, [notifyReady])
 
-  // ── Fetch order + subscribe ───────────────────────────────────────
+  // ── Fetch order + poll for updates ─────────────────────────────────
+  // Was a `postgres_changes` realtime subscription reading straight from
+  // `orders`, authorized by an anon SELECT USING(true) policy — that
+  // policy let anyone dump every order on the platform (see
+  // 018_scoped_anon_reads.sql), so it's gone now. There's no per-session
+  // way to tell Realtime "this anonymous visitor is allowed to see order
+  // X" the way a single scoped RPC call can check it per-request, so this
+  // polls get_order_for_tracking(id) instead — same "auto-updates without
+  // refresh" behavior, just pull instead of push.
   useEffect(() => {
     if (!id) { setLoading(false); return }
 
@@ -141,24 +149,27 @@ export default function OrderTracking() {
       setNotifPermission(Notification.permission)
     }
 
-    supabase.from("orders").select("*").eq("id", id).single().then(({ data }) => {
-      if (data) {
+    let cancelled = false
+
+    const poll = async () => {
+      const { data } = await supabase.rpc("get_order_for_tracking", { p_order_id: id })
+      if (cancelled || !data) return
+      if (prevStatusRef.current === null) {
+        // first load
         setOrder(data)
         prevStatusRef.current = data.status
-        // If already ready when page loads, show banner
         if (data.status === "READY") setShowReadyBanner(true)
+      } else if (data.status !== prevStatusRef.current) {
+        handleStatusChange(data as Order)
+      } else {
+        setOrder(data)
       }
       setLoading(false)
-    })
+    }
 
-    const channel = supabase
-      .channel(`order-tracking-${id}`)
-      .on("postgres_changes", {
-        event: "UPDATE", schema: "public", table: "orders", filter: `id=eq.${id}`
-      }, (payload) => handleStatusChange(payload.new as Order))
-      .subscribe()
-
-    return () => { supabase.removeChannel(channel) }
+    poll()
+    const interval = setInterval(poll, 5000)
+    return () => { cancelled = true; clearInterval(interval) }
   }, [id, handleStatusChange])
 
   if (loading) return (

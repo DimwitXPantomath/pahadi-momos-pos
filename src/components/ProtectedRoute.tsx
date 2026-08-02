@@ -33,9 +33,15 @@ export function ProtectedRoute({ children, allowedRoles }: Props) {
   // Not logged in → go to login
   if (!user) return <Navigate to="/login" replace />
 
-  // Logged in but wrong role → still let them in
-  // (better than locking them out due to profile fetch issues)
-  if (allowedRoles && profile && !allowedRoles.includes(profile.role)) {
+  // Logged in but wrong role, OR role couldn't be determined → fail closed.
+  // This used to fail OPEN when `profile` was null ("better than locking
+  // them out"), which meant any profile-fetch hiccup silently bypassed
+  // role restrictions entirely. The actual cause of profile fetches
+  // failing (profiles insert using a column that didn't exist — see
+  // AuthContext.tsx) is fixed now, so this shouldn't fire in normal use;
+  // when it does fire, real authorization still lives in RLS (see
+  // 015/016_*.sql) — this is UX, not the security boundary.
+  if (allowedRoles && (!profile || !allowedRoles.includes(profile.role))) {
     return <Navigate to="/login" replace />
   }
 
