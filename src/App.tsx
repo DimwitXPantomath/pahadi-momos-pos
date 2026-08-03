@@ -9,6 +9,7 @@ import LoyaltyCard from "@/pages/LoyaltyCard"
 import CustomerSelfOrder from "@/pages/CustomerSelfOrder"
 import DigitalMenu from "@/pages/DigitalMenu"
 import PrintPoster from "@/pages/PrintPoster"
+import TastePaletteQuestionnaire from "@/pages/TastePaletteQuestionnaire"
 
 const App = () => {
   return (
@@ -22,6 +23,7 @@ const App = () => {
         <Route path="/order-online/:outletId" element={<CustomerSelfOrder />} />
         <Route path="/menu/:outletId" element={<DigitalMenu />} />
         <Route path="/print/poster/:posterId" element={<PrintPoster />} />
+        <Route path="/taste-palette" element={<TastePaletteQuestionnaire />} />
         <Route
           path="/"
           element={
