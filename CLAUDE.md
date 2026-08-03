@@ -337,6 +337,15 @@ ls .git/index.lock   # if exists, delete it
 rm .git/index.lock
 ```
 
+### Live schema vs. repo migrations had drifted apart (found 2026-08-03)
+Before this date, migrations 001–008 in `supabase/migrations/` had **never actually finished running** on the live Supabase project — confirmed when migration 009 errored on `update_updated_at_column() does not exist`, a function 001 defines. The live database appears to have been built up manually through the Supabase dashboard table editor instead, over time, so it diverged from the migration files in both directions:
+- Columns the code assumed exist but don't live: `recipes.serves`, `outlet_id` on `categories`/`menu_items`/`ingredients`/`items`/`vendors`/`vendor_shops`/`vendor_item_prices`/`purchase_logs`/`recipe_items`.
+- Tables live that no migration file creates: `purchase_orders`, `purchase_order_items`, `outlets`, `outlet_settings`, plus unrelated tables from other apps sharing this Supabase project (`ledgit_*`, `phoolbook_businesses` — do not touch these, not part of Praang).
+- `profiles.outlet_id` is `uuid`; every other table's `outlet_id` is `text` defaulting to `'demo-outlet'`. These were never the same mechanism.
+- Several tables had **dashboard-created RLS policies granting full unauthenticated read/write** (`orders`, `menu_items`, `credit_sales`, `expenses`, `order_ratings`, `report_logs`) that predated and coexisted with any RLS work done in this repo's migrations — multiple permissive Postgres policies OR together, so the open one always won regardless of what got added alongside it.
+
+**Before trusting any migration file in this repo against the live database again: query `information_schema.columns` and `pg_policies` for the actual live state first.** Don't assume the repo's migration history matches reality — verified false twice in this project already (see this changelog's 2026-08-03 entry).
+
 ---
 
 ## 🔐 Environment Variables
@@ -370,4 +379,5 @@ When starting a new Claude Code session, always:
 | 2026-05-07 | CLAUDE.md created, full spec documented |
 | 2026-05-20 | Modules 1–5 completed: full DB migration, IngredientsView (yield+cost), SubRecipesView (builder+cost), RecipesView (margin calc), all wired into Index.tsx |
 | 2026-05-21 | Fixed `Public/` → `public/` case bug (Vercel 404 on all static assets); deleted stale `index.lock`; confirmed `placeOrder` has `opts?` in main branch |
+| 2026-08-03 | Applied migrations 009–019 to the live Supabase project for the first time — migrations 001–008 had never actually completed on this database either (repo and live schema had drifted apart: several documented tables/columns don't exist live, e.g. `recipes.serves`, `outlet_id` on `categories`/`menu_items`/`ingredients`/`items`/`vendors`; other live tables exist that aren't in any migration file, e.g. `purchase_orders`, `outlets`, `outlet_settings`). Also found and removed dashboard-created RLS policies granting full unauthenticated read/write on `orders`, `menu_items`, `credit_sales`, `expenses`, `order_ratings`, `report_logs` — these predated this project's migrations and were the real critical exposure, not the tenant-isolation gap the original audit focused on. `current_outlet_id()` is now a hardcoded `'demo-outlet'` constant rather than reading `profiles.outlet_id` (which is `uuid`, while every other `outlet_id` column is `text` — comparing them would error). Added `recipes.serves INTEGER DEFAULT 1` — go set real per-recipe values for accurate cost-per-serving. See `combined_migrations_v2.sql` (delivered to user, not yet committed to `supabase/migrations/` as numbered files — do that before the next session touches migrations, so the repo matches what's actually live). |
 
