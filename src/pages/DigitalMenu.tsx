@@ -23,10 +23,17 @@ export default function DigitalMenu() {
 
   useEffect(() => {
     (async () => {
-      const [{ data: cats }, { data: items }] = await Promise.all([
-        supabase.from("categories").select("*").eq("outlet_id", outletId).order("sort_order", { ascending: true }),
-        supabase.from("menu_items").select("*").eq("outlet_id", outletId).eq("available", true).order("name", { ascending: true }),
+      // FIXED: categories/menu_items have no outlet_id column (single
+      // shared menu today, confirmed against the live schema) — the
+      // .eq("outlet_id", ...) filter errored on every call, silently
+      // leaving both arrays empty. outletId is kept in the URL/state
+      // for when multi-outlet menus exist, just not used to filter yet.
+      const [{ data: cats, error: catsError }, { data: items, error: itemsError }] = await Promise.all([
+        supabase.from("categories").select("*").order("sort_order", { ascending: true }),
+        supabase.from("menu_items").select("*").eq("available", true).order("name", { ascending: true }),
       ])
+      if (catsError) console.error("Fetch categories error:", catsError)
+      if (itemsError) console.error("Fetch menu items error:", itemsError)
       setCategories(cats ?? [])
       setMenuItems(items ?? [])
       setLoading(false)

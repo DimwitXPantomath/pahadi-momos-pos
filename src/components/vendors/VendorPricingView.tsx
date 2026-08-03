@@ -108,8 +108,12 @@ export default function VendorPricingView() {
   // ── Load ───────────────────────────────────────────────────────────────────
   const load = useCallback(async () => {
     setLoading(true)
+    // FIXED: vendors has no outlet_id column (confirmed against live
+    // schema) — this filter errored on every load, so `vd` was always
+    // null and the vendor list never populated. vendors is a shared/
+    // global list today, same as categories/menu_items.
     const [{ data: vd }, { data: sh }, { data: br }, { data: ing }, { data: pr }] = await Promise.all([
-      supabase.from("vendors").select("*").eq("outlet_id", OUTLET_ID).order("name"),
+      supabase.from("vendors").select("*").order("name"),
       supabase.from("vendor_shops").select("*").order("shop_name"),
       supabase.from("brands").select("*").order("name"),
       supabase.from("ingredients").select("id, name, unit, cost_per_unit").order("name"),
