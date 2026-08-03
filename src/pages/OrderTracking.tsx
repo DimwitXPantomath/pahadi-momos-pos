@@ -49,7 +49,12 @@ export default function OrderTracking() {
 
   const requestNotification = async () => {
     if (!("Notification" in window)) {
-      alert("Your browser doesn't support notifications. Keep this page open.")
+      // iOS Safari has no Notification/Push API for a page opened from a
+      // scanned link — only for a site added to the Home Screen and
+      // launched from there. Nothing is broken; this page already polls
+      // for status every few seconds, so say that instead of implying
+      // the phone can't do something it's actually fine at.
+      alert("This page updates automatically — no need to do anything, just keep it open and you'll see your order status change here.")
       return
     }
 
@@ -111,15 +116,25 @@ export default function OrderTracking() {
   }, [])
 
   // ── Submit review ────────────────────────────────────────────────
+  // FIXED: this was writing to `order_reviews`, a table that doesn't
+  // exist — the real table is `order_ratings`, with a `comment` column,
+  // not `review`. Every submission was silently failing (error was never
+  // checked) while the UI told the customer it worked. Now checks the
+  // error and only shows success when the row actually saved.
   const submitReview = async () => {
     if (!rating || !id) return
     setSubmittingReview(true)
-    await supabase.from("order_reviews").insert({
+    const { error } = await supabase.from("order_ratings").insert({
       order_id: id,
       rating,
-      review: reviewText,
-      created_at: new Date().toISOString(),
+      comment: reviewText,
     })
+    if (error) {
+      console.error("Review submission error:", error)
+      setSubmittingReview(false)
+      alert("Couldn't submit your review — please try again.")
+      return
+    }
     setReviewSubmitted(true)
     setSubmittingReview(false)
   }
