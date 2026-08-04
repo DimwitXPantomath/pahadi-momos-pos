@@ -10,6 +10,7 @@ import CustomerSelfOrder from "@/pages/CustomerSelfOrder"
 import DigitalMenu from "@/pages/DigitalMenu"
 import PrintPoster from "@/pages/PrintPoster"
 import TastePaletteQuestionnaire from "@/pages/TastePaletteQuestionnaire"
+import TastePaletteResults from "@/pages/TastePaletteResults"
 
 const App = () => {
   return (
@@ -24,6 +25,7 @@ const App = () => {
         <Route path="/menu/:outletId" element={<DigitalMenu />} />
         <Route path="/print/poster/:posterId" element={<PrintPoster />} />
         <Route path="/taste-palette" element={<TastePaletteQuestionnaire />} />
+        <Route path="/taste-palette/results" element={<TastePaletteResults />} />
         <Route
           path="/"
           element={

@@ -313,7 +313,7 @@ export default function TastePaletteQuestionnaire() {
             <p style={{ fontSize: 40, margin: "0 0 8px" }}>✅</p>
             <h1 style={s.title}>You're all set</h1>
             <p style={s.subtitle}>We'll use this to point you to dishes you'll like. You can update it anytime.</p>
-            <button style={s.nextBtn} onClick={() => navigate(-1)}>Done</button>
+            <button style={s.nextBtn} onClick={() => navigate("/taste-palette/results")}>See my matches</button>
           </div>
         </div>
       </div>
