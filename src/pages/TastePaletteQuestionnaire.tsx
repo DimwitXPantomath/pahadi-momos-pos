@@ -294,7 +294,13 @@ export default function TastePaletteQuestionnaire() {
             </>
           )}
           <div style={{ marginTop: 16 }}>
-            <button style={s.skipBtn} onClick={() => navigate(-1)}>Not now</button>
+            {/* FIXED: was navigate(-1) — assumed a previous in-app page
+                existed to go back to. A customer arriving via QR scan
+                or a direct link (typical for this page) has no such
+                history, so "skip" was exiting the whole site instead
+                of just this page. Falls back to a known-safe route
+                instead of browser history. */}
+            <button style={s.skipBtn} onClick={() => navigate("/menu/demo-outlet")}>Not now</button>
           </div>
         </div>
       </div>
