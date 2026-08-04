@@ -183,6 +183,10 @@ export default function TastePaletteQuestionnaire() {
   const [otpInput, setOtpInput] = useState("")
   const [authError, setAuthError] = useState<string | null>(null)
   const [authBusy, setAuthBusy] = useState(false)
+  // Dev-only: sendOtp() is stubbed (no real SMS sent yet), so it hands
+  // back the code directly for testing. This whole field disappears
+  // once real Firebase Phone Auth is wired in — see useCustomerAuth.ts.
+  const [devCode, setDevCode] = useState<string | null>(null)
 
   const [step, setStep] = useState(0)
   const [answers, setAnswers] = useState<TasteProfileDraft>({})
@@ -217,6 +221,7 @@ export default function TastePaletteQuestionnaire() {
     const res = await sendOtp(phoneInput)
     setAuthBusy(false)
     if (!res.ok) { setAuthError(res.error ?? "Couldn't send code"); return }
+    setDevCode(res.devCode ?? null)
     setAuthStep("otp")
   }
 
@@ -279,6 +284,11 @@ export default function TastePaletteQuestionnaire() {
           ) : (
             <>
               <p style={{ fontSize: 13, color: COLORS.muted, marginBottom: 8 }}>Code sent to +91{phoneInput.replace(/\D/g, "")}</p>
+              {devCode && (
+                <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 10, padding: "10px 14px", marginBottom: 12, fontSize: 13, color: "#92400E" }}>
+                  <strong>Dev mode — no real SMS sent.</strong> Your test code is <strong style={{ fontSize: 16, letterSpacing: 2 }}>{devCode}</strong>. This box disappears once real Firebase Phone Auth replaces the stub.
+                </div>
+              )}
               <input
                 style={s.phoneInput}
                 type="text"

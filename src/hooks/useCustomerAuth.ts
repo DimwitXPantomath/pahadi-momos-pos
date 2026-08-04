@@ -56,11 +56,15 @@ function writeSession(session: CustomerSession | null) {
 }
 
 /**
- * Simulates sending an OTP. Logs the code to the console instead of
- * texting it — this is the ONE function that needs a real SMS backend
- * behind it before this can go live with real customers.
+ * Simulates sending an OTP. No real SMS goes out — this is the ONE
+ * function that needs a real backend behind it before this can go
+ * live with real customers. Returns the generated code directly so
+ * the calling UI can show it on-screen for testing (clearly marked
+ * as a dev-only stub) — checking the browser console isn't practical
+ * on a phone. When real Firebase Phone Auth replaces this, the
+ * `devCode` field goes away and callers stop reading it.
  */
-export async function sendOtp(phone: string): Promise<{ ok: boolean; error?: string }> {
+export async function sendOtp(phone: string): Promise<{ ok: boolean; error?: string; devCode?: string }> {
   const digits = digitsOnly(phone)
   if (digits.length < 10) return { ok: false, error: "Enter a valid 10-digit phone number" }
 
@@ -68,12 +72,10 @@ export async function sendOtp(phone: string): Promise<{ ok: boolean; error?: str
   sessionStorage.setItem(OTP_STORE_KEY, JSON.stringify({ phone: digits, code, sentAt: Date.now() }))
 
   // STUB: real implementation calls Firebase's signInWithPhoneNumber
-  // here, which actually sends the SMS. Until then, the code is only
-  // visible in the console — fine for internal testing, not for a
-  // real customer.
+  // here, which actually sends the SMS.
   console.warn(`[STUB OTP] Would text ${code} to +91${digits}. (No real SMS is sent — see useCustomerAuth.ts)`)
 
-  return { ok: true }
+  return { ok: true, devCode: code }
 }
 
 export async function verifyOtp(phone: string, code: string): Promise<{ ok: boolean; error?: string; uid?: string }> {
