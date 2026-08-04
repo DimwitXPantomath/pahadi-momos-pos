@@ -1,16 +1,20 @@
-# CLAUDE.md — Pahadi Momos POS
+# CLAUDE.md — Praang
+
 > This file is read by Claude Code at the start of every session.
 > It describes the project stack, conventions, module status, and rules.
 > **Always read this file before touching any code.**
+> Renamed from "Pahadi Momos POS" — this doc had drifted badly out of
+> date (old name, old repo URL, old brand colors no code actually used
+> anymore) before the 2026-08-04 cleanup pass. See Changelog.
 
 ---
 
 ## 🏗️ Project Overview
 
-**Name:** Pahadi Momos POS  
-**Purpose:** AI-enabled POS + Inventory & Procurement Management System for a food/bakery business (tiramisu production use-case)  
-**Repo:** https://github.com/DimwitXPantomath/pahadi-momos-pos  
-**Live:** https://pahadi-momos-pos.vercel.app  
+**Name:** Praang
+**Purpose:** POS + Inventory & Procurement Management for small F&B businesses in India, expanding into customer-facing features (online ordering, loyalty stamp cards, digital menus, PRAANG Ahead pre-ordering, Taste Palette dish matching).
+**Repo:** https://github.com/DimwitXPantomath/praang-pos
+**Live:** check Vercel dashboard for current production URL — not re-verified as part of this doc cleanup
 **Owner:** @DimwitXPantomath  
 
 ---
@@ -158,15 +162,41 @@ All tables have RLS enabled. Authenticated users can read/write their own org's 
 ## 🎨 Design System
 
 ### Colors
+
+**Teal & Terracotta** — chosen 2026-08-04. Replaces an older forest-green/orange
+palette this doc used to document, which by that point no live code actually
+matched (the staff dashboard's Tailwind theme had already drifted to an
+unrelated orange, `hsl(16 85% 55%)`, with nobody updating this file). Two other
+options were considered and rejected: "Chili & Charcoal" (closer to
+Zomato/Swiggy red — more familiar but less distinct) and "Navy & Marigold"
+(reads more B2B-software than food).
+
 ```
-Primary:    #2D6A4F  (forest green)
-Accent:     #F4A261  (warm orange)
-Background: #F8F9FA
-Card:       #FFFFFF with shadow-sm
-Success:    #52B788
-Warning:    #E9C46A
-Error:      #E76F51
+Primary (brand):     #1B6E5C  hsl(167 61% 27%)  — teal
+Accent (brand):      #E76F51  hsl(12 76% 61%)   — terracotta
+Background:          #F7F5F0  hsl(43 30% 95%)   — warm off-white
+Card:                #FFFFFF with shadow-sm
+Success:             #16A34A
+Warning:             #D97706
+Error:                #DC2626
 ```
+
+Implemented as CSS variables in `src/index.css` (`--primary`, `--brand-accent`,
+`--background`, etc.) and registered in `tailwind.config.ts` — use Tailwind
+classes (`bg-primary`, `bg-brand-accent`, `text-primary`) in new components
+rather than hardcoding hex. Note: `--accent` in shadcn's convention is a
+*structural* token (light hover-state background), separate from
+`--brand-accent` (the actual terracotta brand color, for CTAs/badges/highlights)
+— don't confuse the two when reading component code.
+
+**Known gap:** the customer-facing pages built before 2026-08-04
+(`OrderTracking.tsx`, `CustomerSelfOrder.tsx`, `DigitalMenu.tsx`,
+`TastePaletteQuestionnaire.tsx`) use inline `style={{}}` objects with hardcoded
+hex values, not Tailwind classes — they were updated to use the *new* hex
+values so they at least match the current brand, but they were not converted
+to the Tailwind token system. A future pass should migrate them for real
+consistency (theme changes currently require editing 4+ files by hand instead
+of one CSS variable).
 
 ### Typography
 - Font: Inter (system fallback: sans-serif)
@@ -379,5 +409,6 @@ When starting a new Claude Code session, always:
 | 2026-05-07 | CLAUDE.md created, full spec documented |
 | 2026-05-20 | Modules 1–5 completed: full DB migration, IngredientsView (yield+cost), SubRecipesView (builder+cost), RecipesView (margin calc), all wired into Index.tsx |
 | 2026-05-21 | Fixed `Public/` → `public/` case bug (Vercel 404 on all static assets); deleted stale `index.lock`; confirmed `placeOrder` has `opts?` in main branch |
+| 2026-08-04 | Rebrand to Teal (#1B6E5C) & Terracotta (#E76F51) — see Design System section for why. Updated `src/index.css` CSS vars, `tailwind.config.ts` (new `brand-accent` token), hardcoded hex in `TastePaletteQuestionnaire.tsx`/`PrintPoster.tsx`/`Settings.tsx`/`IngredientsView.tsx`/`IngredientsPage.tsx`, and the live `outlet_branding` DB row (migration `024_rebrand_teal_terracotta.sql`). Also fixed this doc's stale header (was still "Pahadi Momos POS" / old repo URL / tiramisu description) and a real bug found while doing this: `CustomerSelfOrder.tsx`, `DigitalMenu.tsx`, and `VendorPricingView.tsx` were filtering `categories`/`menu_items`/`vendors` by `outlet_id` — a column none of those tables have — so all three had been silently showing empty results since built. Fixed by removing the filter (those tables are shared/global today, not per-outlet). |
 | 2026-08-03 | Applied migrations 009–019 to the live Supabase project for the first time — migrations 001–008 had never actually completed on this database either (repo and live schema had drifted apart: several documented tables/columns don't exist live, e.g. `recipes.serves`, `outlet_id` on `categories`/`menu_items`/`ingredients`/`items`/`vendors`; other live tables exist that aren't in any migration file, e.g. `purchase_orders`, `outlets`, `outlet_settings`). Also found and removed dashboard-created RLS policies granting full unauthenticated read/write on `orders`, `menu_items`, `credit_sales`, `expenses`, `order_ratings`, `report_logs` — these predated this project's migrations and were the real critical exposure, not the tenant-isolation gap the original audit focused on. `current_outlet_id()` is now a hardcoded `'demo-outlet'` constant rather than reading `profiles.outlet_id` (which is `uuid`, while every other `outlet_id` column is `text` — comparing them would error). Added `recipes.serves INTEGER DEFAULT 1` — go set real per-recipe values for accurate cost-per-serving. See `combined_migrations_v2.sql` (delivered to user, not yet committed to `supabase/migrations/` as numbered files — do that before the next session touches migrations, so the repo matches what's actually live). |
 

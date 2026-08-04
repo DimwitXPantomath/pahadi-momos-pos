@@ -141,9 +141,9 @@ const QUESTIONS: Question[] = [
 ]
 
 const COLORS = {
-  primary: "#2D6A4F",
-  accent: "#F4A261",
-  bg: "#F8F9FA",
+  primary: "#1B6E5C",
+  accent: "#E76F51",
+  bg: "#F7F5F0",
   card: "#FFFFFF",
   border: "#E5E7EB",
   text: "#1F2937",
@@ -161,7 +161,7 @@ const s: Record<string, React.CSSProperties> = {
   optionButton: (active: boolean): React.CSSProperties => ({
     display: "block", width: "100%", textAlign: "left", padding: "12px 16px", marginBottom: 8,
     borderRadius: 10, border: `1.5px solid ${active ? COLORS.primary : COLORS.border}`,
-    background: active ? "#EAF4EF" : COLORS.card, color: COLORS.text, fontSize: 15,
+    background: active ? "#E7F2EF" : COLORS.card, color: COLORS.text, fontSize: 15,
     cursor: "pointer", minHeight: 44,
   }),
   footer: { display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 24 },

@@ -41,8 +41,10 @@ body {
 
 @layer base {
   :root {
-    /* Restaurant POS - Warm, Professional Theme */
-    --background: 30 20% 98%;
+    /* Praang brand — Teal & Terracotta (chosen 2026-08-04, see
+       CLAUDE.md Design System section for the other two options
+       that were considered) */
+    --background: 43 30% 95%;
     --foreground: 20 20% 15%;
 
     --card: 0 0% 100%;
@@ -51,8 +53,8 @@ body {
     --popover: 0 0% 100%;
     --popover-foreground: 20 20% 15%;
 
-    /* Warm coral/orange - appetizing restaurant feel */
-    --primary: 16 85% 55%;
+    /* Teal — primary brand color, #1B6E5C */
+    --primary: 167 61% 27%;
     --primary-foreground: 0 0% 100%;
 
     --secondary: 30 15% 94%;
@@ -61,15 +63,22 @@ body {
     --muted: 30 10% 92%;
     --muted-foreground: 20 10% 45%;
 
-    --accent: 30 25% 90%;
+    --accent: 167 20% 92%;
     --accent-foreground: 20 20% 20%;
+
+    /* Terracotta — secondary brand color, #E76F51. Distinct from
+       shadcn's structural --accent (a light hover-state background)
+       above — this is for explicit brand-accent use: CTAs, badges,
+       highlights. Use bg-brand-accent / text-brand-accent. */
+    --brand-accent: 12 76% 61%;
+    --brand-accent-foreground: 0 0% 100%;
 
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
 
     --border: 30 15% 88%;
     --input: 30 15% 88%;
-    --ring: 16 85% 55%;
+    --ring: 167 61% 27%;
 
     --radius: 0.75rem;
 
@@ -88,12 +97,12 @@ body {
     /* Sidebar */
     --sidebar-background: 20 20% 12%;
     --sidebar-foreground: 30 20% 95%;
-    --sidebar-primary: 16 85% 55%;
+    --sidebar-primary: 167 61% 27%;
     --sidebar-primary-foreground: 0 0% 100%;
     --sidebar-accent: 20 20% 18%;
     --sidebar-accent-foreground: 30 20% 95%;
     --sidebar-border: 20 15% 20%;
-    --sidebar-ring: 16 85% 55%;
+    --sidebar-ring: 167 61% 27%;
   }
 
   .dark {
@@ -106,7 +115,7 @@ body {
     --popover: 20 20% 12%;
     --popover-foreground: 30 20% 95%;
 
-    --primary: 16 85% 55%;
+    --primary: 167 55% 38%;
     --primary-foreground: 0 0% 100%;
 
     --secondary: 20 15% 18%;
@@ -118,21 +127,24 @@ body {
     --accent: 20 20% 22%;
     --accent-foreground: 30 20% 95%;
 
+    --brand-accent: 12 76% 65%;
+    --brand-accent-foreground: 0 0% 100%;
+
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
 
     --border: 20 15% 22%;
     --input: 20 15% 22%;
-    --ring: 16 85% 55%;
+    --ring: 167 55% 38%;
 
     --sidebar-background: 20 20% 6%;
     --sidebar-foreground: 30 20% 95%;
-    --sidebar-primary: 16 85% 55%;
+    --sidebar-primary: 167 55% 38%;
     --sidebar-primary-foreground: 0 0% 100%;
     --sidebar-accent: 20 20% 12%;
     --sidebar-accent-foreground: 30 20% 95%;
     --sidebar-border: 20 15% 15%;
-    --sidebar-ring: 16 85% 55%;
+    --sidebar-ring: 167 55% 38%;
   }
 }
 

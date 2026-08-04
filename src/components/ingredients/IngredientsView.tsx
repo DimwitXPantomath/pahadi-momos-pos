@@ -558,7 +558,7 @@ export default function IngredientsView() {
               </div>
               <div style={{ ...p.previewLine, fontWeight: 700, color: "#111", marginTop: 2 }}>
                 → Cost per {form.usageUnit === "grams" ? "gram" : form.usageUnit === "ml" ? "ml" : "piece"}:{" "}
-                <span style={{ color: "#2D6A4F", fontSize: 16 }}>
+                <span style={{ color: "#1B6E5C", fontSize: 16 }}>
                   ₹{fmt(calcCostPerUsageUnit, 4)}
                 </span>
               </div>

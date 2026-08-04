@@ -21,8 +21,8 @@ type Branding = {
 const DEFAULT_BRANDING: Branding = {
   business_name: "Praang",
   logo_url: null,
-  primary_color: "#2D6A4F",
-  secondary_color: "#F4A261",
+  primary_color: "#1B6E5C",
+  secondary_color: "#E76F51",
   address: null,
   phone: null,
   fssai_number: null,

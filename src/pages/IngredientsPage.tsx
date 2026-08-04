@@ -580,7 +580,7 @@ export default function IngredientsPage() {
               </div>
               <div style={{ ...p.previewLine, fontWeight: 700, color: "#111", marginTop: 4, fontSize: 15 }}>
                 → Cost per {form.usageUnit === "grams" ? "gram" : form.usageUnit === "ml" ? "ml" : "piece"}:{" "}
-                <span style={{ color: "#2D6A4F", fontSize: 18 }}>
+                <span style={{ color: "#1B6E5C", fontSize: 18 }}>
                   ₹{fmt(calcCostPerUsageUnit, 4)}
                 </span>
               </div>
