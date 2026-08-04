@@ -21,6 +21,20 @@ export type MenuItem = {
   sizes?: MenuSize[]
   addons?: MenuAddon[]
   station?: "MOMO" | "TANDOOR" | "DRINKS" | "GENERAL"
+
+  // Taste Palette tagging (see 022_ahead_and_taste_palette_schema.sql)
+  // — all nullable, no defaults. An untagged dish must never silently
+  // read as "safe"; see DishTaggingModal.tsx for how incompleteness
+  // is surfaced rather than hidden.
+  dietary_type?: "vegetarian" | "non_vegetarian" | "eggetarian" | "vegan" | "jain" | null
+  allergens?: string[] | null
+  spice_level?: number | null
+  estimated_calories?: number | null
+  calories_manually_overridden?: boolean
+  cooking_type?: string[] | null
+  cuisine_category?: string | null
+  meal_course_type?: "starter" | "main" | "dessert" | "beverage" | "snack" | null
+  flavor_profile?: string[] | null
 }
 
 // ─── Cart & Order Items ───────────────────────────────────────────────────────

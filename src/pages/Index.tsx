@@ -32,6 +32,7 @@ import ExpiryAlarmModal from "@/components/ExpiryAlarmModal"
 import BusinessResourcesView from "@/components/resources/BusinessResourcesView"
 import ChecklistsView from "@/components/checklists/ChecklistsView"
 import PostersView from "@/components/posters/PostersView"
+import DishTaggingModal from "@/components/menu/DishTaggingModal"
 
 const OUTLET_ID = "demo-outlet"
 
@@ -122,6 +123,7 @@ export default function Index() {
   // ── Legacy state (complex features not yet extracted) ──────────
   const [printMode, setPrintMode] = useState<PrintMode>("KOT+BILL")
   const [sizeSelectorItem, setSizeSelectorItem] = useState<MenuItem | null>(null)
+  const [taggingItem, setTaggingItem] = useState<MenuItem | null>(null)
   const [selectedAddons, setSelectedAddons] = useState<{ name: string; price: number }[]>([])
   const [selectedSize, setSelectedSize] = useState<{ label: string; price: number } | null>(null)
   const addons = sizeSelectorItem?.addons ?? []
@@ -749,6 +751,18 @@ export default function Index() {
                       </div>
                       <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-end" }}>
                         <button onClick={() => toggleAvailability(item.id, item.available)} style={{ padding: "3px 10px", borderRadius: 6, border: "1px solid", fontSize: 11, cursor: "pointer", fontWeight: 600, borderColor: item.available ? "#bbf7d0" : "#fecaca", background: item.available ? "#f0fdf4" : "#fef2f2", color: item.available ? "#16a34a" : "#dc2626" }}>{item.available ? "Available" : "Out of stock"}</button>
+                        <button
+                          onClick={() => setTaggingItem(item)}
+                          style={{
+                            padding: "3px 10px", borderRadius: 6, border: "1px solid",
+                            fontSize: 11, cursor: "pointer", fontWeight: 600,
+                            borderColor: item.dietary_type && item.spice_level != null ? "#99d6c8" : "#fde68a",
+                            background: item.dietary_type && item.spice_level != null ? "#e7f2ef" : "#fffbeb",
+                            color: item.dietary_type && item.spice_level != null ? "#1B6E5C" : "#b45309",
+                          }}
+                        >
+                          {item.dietary_type && item.spice_level != null ? "🏷️ Tagged" : "🏷️ Tag"}
+                        </button>
                         <button onClick={() => deleteMenuItem(item.id)} style={{ padding: "3px 10px", borderRadius: 6, border: "1px solid #fecaca", background: "#fef2f2", color: "#dc2626", fontSize: 11, cursor: "pointer", fontWeight: 600 }}>Delete</button>
                       </div>
                     </div>
@@ -758,6 +772,17 @@ export default function Index() {
             </div>
           )}
         </div>
+      )}
+
+      {taggingItem && (
+        <DishTaggingModal
+          item={taggingItem}
+          onClose={() => setTaggingItem(null)}
+          onSaved={updated => {
+            setMenuItems(prev => prev.map(m => m.id === updated.id ? updated : m))
+            setTaggingItem(null)
+          }}
+        />
       )}
 
       {view === "settings" && (
