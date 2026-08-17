@@ -5,6 +5,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   Legend, ResponsiveContainer,
 } from "recharts"
+import { PROCUREMENT_CATEGORIES, categoryColor } from "@/lib/procurementCategories"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -27,6 +28,7 @@ interface IngredientRow {
   preferred_vendor_id: string | null
   current_stock: number
   created_at: string
+  category: string | null
 }
 
 interface Vendor {
@@ -69,6 +71,7 @@ const emptyForm = {
   unitsPerPurchase:   "",       // how many usage-units per 1 purchase unit
   minStockLevel:      "",
   preferredVendorId:  "",
+  category:           "" as string,
 }
 
 const emptyStockRow = (): StockRow => ({
@@ -168,6 +171,7 @@ export default function IngredientsView() {
       cost_per_usage_unit: calcCostPerUsageUnit,
       min_stock_level:    parseFloat(form.minStockLevel) || 0,
       preferred_vendor_id: form.preferredVendorId || null,
+      category:           form.category || null,
     }
 
     let err: any
@@ -208,6 +212,7 @@ export default function IngredientsView() {
       unitsPerPurchase:   String(row.units_per_purchase ?? ""),
       minStockLevel:      row.min_stock_level > 0 ? String(row.min_stock_level) : "",
       preferredVendorId:  row.preferred_vendor_id || "",
+      category:           row.category || "",
     })
     setEditRow(row)
     setTab("add")
@@ -304,7 +309,7 @@ export default function IngredientsView() {
             }}
             style={{
               ...p.tabBtn,
-              background: tab === t.key ? "#111" : "white",
+              background: tab === t.key ? "hsl(var(--primary))" : "white",
               color:      tab === t.key ? "white" : "#374151",
               fontWeight: tab === t.key ? 700 : 400,
             }}
@@ -346,7 +351,7 @@ export default function IngredientsView() {
               <table style={p.table}>
                 <thead>
                   <tr>
-                    {["Name", "Purchase Unit", "Cost/Unit", "Yield%", "Usage Unit", "Units/Purchase", "Cost/Usage Unit", "Min Stock", ""].map(h => (
+                    {["Name", "Category", "Purchase Unit", "Cost/Unit", "Yield%", "Usage Unit", "Units/Purchase", "Cost/Usage Unit", "Min Stock", ""].map(h => (
                       <th key={h} style={p.th}>{h}</th>
                     ))}
                   </tr>
@@ -363,6 +368,13 @@ export default function IngredientsView() {
                               Low Stock
                             </span>
                           )}
+                        </td>
+                        <td style={p.td}>
+                          {row.category ? (
+                            <span style={{ ...p.badge, background: categoryColor(row.category).bg, color: categoryColor(row.category).color }}>
+                              {row.category}
+                            </span>
+                          ) : <span style={{ color: "#9ca3af", fontSize: 11 }}>Unset</span>}
                         </td>
                         <td style={p.td}>{row.purchase_unit || "—"}</td>
                         <td style={{ ...p.td, fontFamily: "monospace" }}>
@@ -526,19 +538,35 @@ export default function IngredientsView() {
             </div>
           </div>
 
-          {/* Row 5: Preferred Vendor */}
-          <div style={p.field}>
-            <label style={p.label}>Preferred Vendor</label>
-            <select
-              style={p.input}
-              value={form.preferredVendorId}
-              onChange={e => setForm(f => ({ ...f, preferredVendorId: e.target.value }))}
-            >
-              <option value="">— None —</option>
-              {vendors.map(v => (
-                <option key={v.id} value={v.id}>{v.name}</option>
-              ))}
-            </select>
+          {/* Row 5: Preferred Vendor + Category */}
+          <div style={p.grid2}>
+            <div style={p.field}>
+              <label style={p.label}>Preferred Vendor</label>
+              <select
+                style={p.input}
+                value={form.preferredVendorId}
+                onChange={e => setForm(f => ({ ...f, preferredVendorId: e.target.value }))}
+              >
+                <option value="">— None —</option>
+                {vendors.map(v => (
+                  <option key={v.id} value={v.id}>{v.name}</option>
+                ))}
+              </select>
+            </div>
+            <div style={p.field}>
+              <label style={p.label}>Procurement Category</label>
+              <select
+                style={p.input}
+                value={form.category}
+                onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
+              >
+                <option value="">— Unset —</option>
+                {PROCUREMENT_CATEGORIES.map(c => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+              <span style={p.helper}>Used to filter ingredient suggestions when a vendor is picked in Procurement</span>
+            </div>
           </div>
 
           {/* Live preview */}
@@ -841,7 +869,7 @@ const p: Record<string, React.CSSProperties> = {
   header:      { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 },
   title:       { fontSize: 22, fontWeight: 800, color: "#111", margin: 0 },
   subtitle:    { fontSize: 13, color: "#6b7280", marginTop: 4 },
-  statPill:    { background: "#111", color: "white", borderRadius: 20, padding: "6px 14px", fontSize: 13, fontWeight: 600 },
+  statPill:    { background: "hsl(var(--primary))", color: "white", borderRadius: 20, padding: "6px 14px", fontSize: 13, fontWeight: 600 },
   tabRow:      { display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" },
   tabBtn:      { height: 36, padding: "0 16px", border: "1px solid #e5e7eb", borderRadius: 20, fontSize: 13, cursor: "pointer" },
   card:        { background: "white", border: "1px solid #e5e7eb", borderRadius: 12, padding: 20, marginBottom: 16 },
@@ -861,7 +889,7 @@ const p: Record<string, React.CSSProperties> = {
   errorBanner:   { background: "#fee2e2", color: "#991b1b", borderRadius: 8, padding: "10px 14px", fontSize: 13, marginBottom: 12 },
   successBanner: { background: "#dcfce7", color: "#166534", borderRadius: 8, padding: "10px 14px", fontSize: 13, marginBottom: 12 },
   btnRow:        { display: "flex", gap: 10, justifyContent: "flex-end" },
-  primaryBtn:    { height: 44, padding: "0 20px", background: "#111", color: "white", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: "pointer" },
+  primaryBtn:    { height: 44, padding: "0 20px", background: "hsl(var(--primary))", color: "white", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: "pointer" },
   secondaryBtn:  { height: 44, padding: "0 20px", background: "white", color: "#374151", border: "1px solid #d1d5db", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: "pointer" },
   linkBtn:       { background: "none", border: "none", color: "#111", fontWeight: 700, cursor: "pointer", textDecoration: "underline", fontSize: 14 },
   table:         { width: "100%", borderCollapse: "collapse", fontSize: 13 },

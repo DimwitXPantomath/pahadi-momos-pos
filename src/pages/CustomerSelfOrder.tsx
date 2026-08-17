@@ -1,6 +1,9 @@
 import { useParams, useNavigate, useSearchParams } from "react-router-dom"
 import { useState, useEffect, useMemo } from "react"
 import { supabase } from "@/lib/supabase"
+import { cn, sanitizePhoneDigits } from "@/lib/utils"
+import { Card } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
 
 // Public, no-login online ordering page — what the counter QR now points to
 // instead of a printed loyalty card. Deliberately simple: no size/addon
@@ -9,9 +12,14 @@ import { supabase } from "@/lib/supabase"
 // The order lands with payment_status='pending'; a staff member confirms
 // payment in the Orders board, and THAT is what fires a stamp/points, not
 // this page.
+//
+// 2026-08-13: migrated from inline style={{}} objects (hardcoded hex) to
+// Tailwind classes bound to tailwind.config.ts tokens, same pass as
+// DigitalMenu.tsx. Presentation only — every hook, query, filter, and
+// handler below is unchanged from the previous version.
 
 type Category = { id: string; name: string; sort_order: number }
-type MenuItem = { id: string; name: string; price: number; category_id: string | null; is_veg: boolean; available: boolean }
+type MenuItem = { id: string; name: string; price: number; category_id: string | null; is_veg: boolean; available: boolean; estimated_calories?: number | null }
 type CartLine = { id: string; name: string; price: number; quantity: number }
 
 export default function CustomerSelfOrder() {
@@ -112,150 +120,166 @@ export default function CustomerSelfOrder() {
 
   if (placedOrderId) {
     return (
-      <div style={s.page}>
-        <div style={{ ...s.card, textAlign: "center", marginTop: 40 }}>
-          <p style={{ fontSize: 48, margin: "0 0 8px" }}>✅</p>
-          <h2 style={{ margin: "0 0 8px" }}>Order placed!</h2>
-          <p style={{ color: "#374151", fontSize: 14, marginBottom: 16 }}>
+      <div className="max-w-[480px] mx-auto px-4 pt-4 pb-6 min-h-screen bg-background font-sans">
+        <Card className="p-6 text-center mt-10">
+          <p className="text-5xl m-0 mb-2">✅</p>
+          <h2 className="m-0 mb-2 text-foreground text-xl font-bold">Order placed!</h2>
+          <p className="text-gray-600 text-sm mb-4">
             {tableId ? `Table ${tableId.replace(/^T/i, "")} — s` : "S"}how your phone number ({phone}) at the counter to pay. Your stamp/points are added once staff confirm payment.
           </p>
           <button
             onClick={() => navigate(`/order/${placedOrderId}`)}
-            style={{ ...s.primaryBtn, marginBottom: 8 }}
+            className="bg-primary text-primary-foreground border-none rounded-xl text-sm font-bold cursor-pointer px-6 py-3 mb-2"
           >Track my order</button>
-        </div>
+        </Card>
       </div>
     )
   }
 
   return (
-    <div style={s.page}>
-      <div style={{ textAlign: "center", margin: "16px 0 20px" }}>
-        <h1 style={{ fontSize: 20, fontWeight: 800, margin: 0 }}>🌿 Praang</h1>
-        <p style={{ color: "#6b7280", margin: "4px 0 0", fontSize: 13 }}>Order online — pay at the counter</p>
+    <div className="max-w-[480px] mx-auto px-4 pt-4 pb-6 min-h-screen bg-background font-sans">
+      <div className="text-center my-4 mb-5">
+        <h1 className="text-xl font-extrabold m-0 text-foreground">🌿 Praang</h1>
+        <p className="text-muted-foreground mt-1 mb-0 text-[13px]">Order online — pay at the counter</p>
         {tableId && (
-          <span style={{ display: "inline-block", marginTop: 8, fontSize: 12, fontWeight: 700, padding: "3px 12px", borderRadius: 20, background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0" }}>
-            📍 Table {tableId.replace(/^T/i, "")}
-          </span>
+          <Badge variant="success" className="mt-2">📍 Table {tableId.replace(/^T/i, "")}</Badge>
         )}
       </div>
 
       {!showCheckout ? (
         <>
           {/* Category tabs */}
-          <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 8, marginBottom: 12 }}>
-            <button onClick={() => setActiveCategory("all")} style={pill(activeCategory === "all")}>All</button>
+          <div className="flex gap-1.5 overflow-x-auto pb-2 mb-3">
+            <Pill active={activeCategory === "all"} onClick={() => setActiveCategory("all")}>All</Pill>
             {categories.map(c => (
-              <button key={c.id} onClick={() => setActiveCategory(c.id)} style={pill(activeCategory === c.id)}>{c.name}</button>
+              <Pill key={c.id} active={activeCategory === c.id} onClick={() => setActiveCategory(c.id)}>{c.name}</Pill>
             ))}
           </div>
 
           {loading ? (
-            <p style={{ textAlign: "center", color: "#9ca3af", padding: "40px 0" }}>Loading menu…</p>
+            <p className="text-center text-gray-400 py-10">Loading menu…</p>
           ) : filteredItems.length === 0 ? (
-            <p style={{ textAlign: "center", color: "#9ca3af", padding: "40px 0" }}>No items available right now.</p>
+            <p className="text-center text-gray-400 py-10">No items available right now.</p>
           ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 10, paddingBottom: cartQty > 0 ? 90 : 20 }}>
+            <div className={cn("flex flex-col gap-2.5", cartQty > 0 ? "pb-[90px]" : "pb-5")}>
               {filteredItems.map(item => (
-                <div key={item.id} style={{ ...s.card, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-                    <span style={{ width: 8, height: 8, borderRadius: "50%", background: item.is_veg ? "#16a34a" : "#dc2626", flexShrink: 0 }} />
+                <Card key={item.id} className="p-3 px-4 flex items-center justify-between">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className={cn("w-2 h-2 rounded-full flex-shrink-0", item.is_veg ? "bg-green-600" : "bg-red-600")} />
                     <div>
-                      <p style={{ margin: 0, fontWeight: 600, fontSize: 14 }}>{item.name}</p>
-                      <p style={{ margin: "2px 0 0", fontSize: 13, color: "#6b7280" }}>₹{item.price}</p>
+                      <p className="m-0 font-semibold text-sm text-foreground">{item.name}</p>
+                      <p className="mt-0.5 mb-0 text-[13px] text-gray-500">
+                        ₹{item.price}
+                        {item.estimated_calories != null && ` · ~${item.estimated_calories} kcal`}
+                      </p>
                     </div>
                   </div>
                   {qtyInCart(item.id) === 0 ? (
-                    <button onClick={() => addItem(item)} style={{ ...s.primaryBtn, padding: "6px 16px", fontSize: 13 }}>Add</button>
+                    <button
+                      onClick={() => addItem(item)}
+                      className="bg-primary text-primary-foreground border-none rounded-xl text-[13px] font-bold cursor-pointer px-4 py-1.5"
+                    >Add</button>
                   ) : (
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <button onClick={() => decreaseItem(item.id)} style={qtyBtn}>−</button>
-                      <span style={{ fontWeight: 700 }}>{qtyInCart(item.id)}</span>
-                      <button onClick={() => addItem(item)} style={qtyBtn}>+</button>
+                    <div className="flex items-center gap-2.5">
+                      <QtyBtn onClick={() => decreaseItem(item.id)}>−</QtyBtn>
+                      <span className="font-bold">{qtyInCart(item.id)}</span>
+                      <QtyBtn onClick={() => addItem(item)}>+</QtyBtn>
                     </div>
                   )}
-                </div>
+                </Card>
               ))}
             </div>
           )}
 
           {/* Sticky cart bar */}
           {cartQty > 0 && (
-            <div style={s.stickyBar}>
+            <div className="fixed left-0 right-0 bottom-0 max-w-[480px] mx-auto bg-card border-t border-border pos-shadow-lg px-4 py-3 flex items-center justify-between">
               <div>
-                <p style={{ margin: 0, fontSize: 12, color: "#6b7280" }}>{cartQty} item{cartQty > 1 ? "s" : ""}</p>
-                <p style={{ margin: 0, fontWeight: 800, fontSize: 16 }}>₹{total.toFixed(2)}</p>
+                <p className="m-0 text-xs text-gray-500">{cartQty} item{cartQty > 1 ? "s" : ""}</p>
+                <p className="m-0 font-extrabold text-base text-foreground">₹{total.toFixed(2)}</p>
               </div>
-              <button onClick={() => setShowCheckout(true)} style={{ ...s.primaryBtn, padding: "12px 24px" }}>View Cart →</button>
+              <button
+                onClick={() => setShowCheckout(true)}
+                className="bg-primary text-primary-foreground border-none rounded-xl text-sm font-bold cursor-pointer px-6 py-3"
+              >View Cart →</button>
             </div>
           )}
         </>
       ) : (
         <>
-          <button onClick={() => setShowCheckout(false)} style={{ background: "none", border: "none", color: "#6b7280", fontSize: 13, cursor: "pointer", padding: 0, marginBottom: 12 }}>← Back to menu</button>
+          <button onClick={() => setShowCheckout(false)} className="bg-transparent border-none text-gray-500 text-[13px] cursor-pointer p-0 mb-3">← Back to menu</button>
 
-          <div style={{ ...s.card, marginBottom: 12 }}>
-            <p style={{ fontWeight: 700, margin: "0 0 10px", fontSize: 14 }}>Your order</p>
+          <Card className="p-4 mb-3">
+            <p className="font-bold m-0 mb-2.5 text-sm text-foreground">Your order</p>
             {cart.map(i => (
-              <div key={i.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 14, padding: "6px 0" }}>
+              <div key={i.id} className="flex justify-between text-sm py-1.5">
                 <span>{i.name} × {i.quantity}</span>
                 <span>₹{(i.price * i.quantity).toFixed(0)}</span>
               </div>
             ))}
-            <div style={{ borderTop: "1px solid #e5e7eb", margin: "8px 0" }} />
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "#6b7280" }}><span>Subtotal</span><span>₹{subtotal.toFixed(2)}</span></div>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "#6b7280" }}><span>GST (5%)</span><span>₹{gst.toFixed(2)}</span></div>
-            <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 800, fontSize: 16, marginTop: 6 }}><span>Total</span><span>₹{total.toFixed(2)}</span></div>
-          </div>
+            <div className="border-t border-border my-2" />
+            <div className="flex justify-between text-[13px] text-gray-500"><span>Subtotal</span><span>₹{subtotal.toFixed(2)}</span></div>
+            <div className="flex justify-between text-[13px] text-gray-500"><span>GST (5%)</span><span>₹{gst.toFixed(2)}</span></div>
+            <div className="flex justify-between font-extrabold text-base mt-1.5 text-foreground"><span>Total</span><span>₹{total.toFixed(2)}</span></div>
+          </Card>
 
-          <div style={{ ...s.card, marginBottom: 12 }}>
-            <p style={{ fontWeight: 700, margin: "0 0 10px", fontSize: 14 }}>Your details</p>
+          <Card className="p-4 mb-3">
+            <p className="font-bold m-0 mb-2.5 text-sm text-foreground">Your details</p>
             <input
               type="tel" maxLength={10}
               placeholder="📞 Phone number (required)"
               value={phone}
-              onChange={e => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
-              style={{ ...s.input, marginBottom: 8 }}
+              onChange={e => setPhone(sanitizePhoneDigits(e.target.value))}
+              className="w-full box-border px-3 py-2.5 border-[1.5px] border-border rounded-lg text-sm outline-none focus:ring-2 focus:ring-ring focus:border-primary mb-2"
             />
             <input
               placeholder="👤 Name (optional)"
               value={name}
               onChange={e => setName(e.target.value)}
-              style={s.input}
+              className="w-full box-border px-3 py-2.5 border-[1.5px] border-border rounded-lg text-sm outline-none focus:ring-2 focus:ring-ring focus:border-primary"
             />
-            <p style={{ fontSize: 11, color: "#9ca3af", marginTop: 8 }}>Used to track your stamp/loyalty progress and to confirm payment at the counter.</p>
-          </div>
+            <p className="text-[11px] text-gray-400 mt-2">Used to track your stamp/loyalty progress and to confirm payment at the counter.</p>
+          </Card>
 
           {submitError && (
-            <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "10px 14px", marginBottom: 12, fontSize: 13, color: "#dc2626" }}>{submitError}</div>
+            <div className="bg-destructive/10 border border-destructive/20 rounded-lg px-3.5 py-2.5 mb-3 text-[13px] text-destructive">{submitError}</div>
           )}
 
-          <button onClick={submitOrder} disabled={submitting} style={{ ...s.primaryBtn, width: "100%", padding: 14 }}>
+          <button
+            onClick={submitOrder}
+            disabled={submitting}
+            className="bg-primary text-primary-foreground border-none rounded-xl text-sm font-bold cursor-pointer w-full py-3.5 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
             {submitting ? "Placing order..." : `Place order — ₹${total.toFixed(2)}`}
           </button>
-          <p style={{ fontSize: 11, color: "#9ca3af", textAlign: "center", marginTop: 10 }}>Pay at the counter (cash/UPI) — staff confirm your payment there.</p>
+          <p className="text-[11px] text-gray-400 text-center mt-2.5">Pay at the counter (cash/UPI) — staff confirm your payment there.</p>
         </>
       )}
     </div>
   )
 }
 
-const pill = (active: boolean): React.CSSProperties => ({
-  padding: "6px 16px", borderRadius: 20, border: "1.5px solid", whiteSpace: "nowrap", cursor: "pointer", fontSize: 13, fontWeight: 600,
-  borderColor: active ? "#111" : "#e5e7eb",
-  background: active ? "#111" : "white",
-  color: active ? "white" : "#374151",
-})
-
-const qtyBtn: React.CSSProperties = {
-  width: 28, height: 28, borderRadius: 6, border: "1px solid #e5e7eb", background: "#f3f4f6",
-  cursor: "pointer", fontSize: 16, fontWeight: 700,
+function Pill({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "px-4 py-1.5 rounded-full border-[1.5px] whitespace-nowrap cursor-pointer text-[13px] font-semibold transition-colors",
+        active ? "border-primary bg-primary text-primary-foreground" : "border-gray-200 bg-white text-gray-700"
+      )}
+    >
+      {children}
+    </button>
+  )
 }
 
-const s: Record<string, React.CSSProperties> = {
-  page: { maxWidth: 480, margin: "0 auto", padding: "16px 16px 24px", fontFamily: "system-ui, sans-serif", minHeight: "100vh", background: "#fafafa" },
-  card: { background: "white", borderRadius: 14, border: "1px solid #e5e7eb", padding: "14px 16px" },
-  input: { width: "100%", padding: "10px 12px", border: "1.5px solid #e5e7eb", borderRadius: 8, fontSize: 14, outline: "none", boxSizing: "border-box" as const },
-  primaryBtn: { background: "#111", color: "white", border: "none", borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: "pointer" },
-  stickyBar: { position: "fixed", left: 0, right: 0, bottom: 0, maxWidth: 480, margin: "0 auto", background: "white", borderTop: "1px solid #e5e7eb", padding: "12px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", boxShadow: "0 -4px 16px rgba(0,0,0,0.06)" },
+function QtyBtn({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      className="w-7 h-7 rounded-md border border-border bg-muted cursor-pointer text-base font-bold text-foreground"
+    >
+      {children}
+    </button>
+  )
 }

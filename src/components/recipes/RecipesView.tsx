@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react"
 import { supabase } from "@/lib/supabase"
 import { CUT_STYLES, HEAT_LEVELS, HEAT_LABELS, type HeatLevel } from "@/types/cuts"
+import RecipeImportModal from "./RecipeImportModal"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 // Queried against the REAL schema (001_initial_schema.sql + 011_recipe_sop_fields.sql)
@@ -78,6 +79,7 @@ export default function RecipesView() {
   const [error, setError] = useState("")
   const [success, setSuccess] = useState("")
   const [showCreateForm, setShowCreateForm] = useState(false)
+  const [showImportModal, setShowImportModal] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
 
   // ── Create recipe form
@@ -327,13 +329,28 @@ export default function RecipesView() {
             Link menu items to ingredients & sub recipes · costing, cut style, heat, timing and technique in one place
           </p>
         </div>
-        <button style={s.primaryBtn} onClick={() => { setShowCreateForm(v => !v); setError("") }}>
-          {showCreateForm ? "✕ Cancel" : "➕ New Recipe"}
-        </button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button style={{ ...s.primaryBtn, background: "white", color: "#111", border: "1.5px solid #e5e7eb" }} onClick={() => setShowImportModal(true)}>
+            📄 Import from PDF
+          </button>
+          <button style={s.primaryBtn} onClick={() => { setShowCreateForm(v => !v); setError("") }}>
+            {showCreateForm ? "✕ Cancel" : "➕ New Recipe"}
+          </button>
+        </div>
       </div>
 
       {error && <div style={s.errorBanner}>⚠️ {error}</div>}
       {success && <div style={s.successBanner}>✅ {success}</div>}
+
+      {showImportModal && (
+        <RecipeImportModal
+          menuItems={menuItems}
+          ingredients={ingredients}
+          existingRecipeMenuItemIds={recipes.map(r => r.menu_item_id).filter((id): id is string => !!id)}
+          onClose={() => setShowImportModal(false)}
+          onImported={fetchAll}
+        />
+      )}
 
       {showCreateForm && (
         <div style={s.card}>
@@ -403,7 +420,7 @@ export default function RecipesView() {
           ) : (
             filteredRecipes.map(r => (
               <div key={r.id} onClick={() => setSelected(r)}
-                style={{ ...s.listItem, background: selected?.id === r.id ? "#111" : "white", color: selected?.id === r.id ? "white" : "#111" }}>
+                style={{ ...s.listItem, background: selected?.id === r.id ? "hsl(var(--primary))" : "white", color: selected?.id === r.id ? "white" : "#111" }}>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontWeight: 700, fontSize: 14 }}>{r.menu_item_name}</div>
                   <div style={{ fontSize: 12, opacity: 0.6, marginTop: 2 }}>
@@ -463,7 +480,7 @@ export default function RecipesView() {
                 <div style={s.typeToggle}>
                   {(["ingredient", "sub_recipe"] as const).map(t => (
                     <button key={t} onClick={() => { setLineType(t); setLineForm({ ref_id: "", quantity: "", cut_style: "", heat_level: "", timing_note: "" }) }}
-                      style={{ ...s.typeBtn, background: lineType === t ? "#111" : "#f3f4f6", color: lineType === t ? "white" : "#374151", fontWeight: lineType === t ? 700 : 400 }}>
+                      style={{ ...s.typeBtn, background: lineType === t ? "hsl(var(--primary))" : "#f3f4f6", color: lineType === t ? "white" : "#374151", fontWeight: lineType === t ? 700 : 400 }}>
                       {t === "ingredient" ? "🧂 Raw Ingredient" : "🥣 Sub Recipe"}
                     </button>
                   ))}
@@ -657,7 +674,7 @@ export default function RecipesView() {
                   </div>
                 </div>
                 <div style={s.btnRow}>
-                  <button style={{ ...s.primaryBtn, opacity: sopSaving ? 0.7 : 1, background: sopSaved ? "#16a34a" : "#111" }}
+                  <button style={{ ...s.primaryBtn, opacity: sopSaving ? 0.7 : 1, background: sopSaved ? "#16a34a" : "hsl(var(--primary))" }}
                     onClick={handleSaveSop} disabled={sopSaving}>
                     {sopSaving ? "Saving…" : sopSaved ? "✓ Saved!" : "Save SOP Notes"}
                   </button>
@@ -681,7 +698,7 @@ const s: Record<string, React.CSSProperties> = {
   split: { display: "grid", gridTemplateColumns: "280px 1fr", gap: 16, alignItems: "start" },
   leftPanel: { background: "white", border: "1px solid #e5e7eb", borderRadius: 12, overflow: "hidden" },
   panelHead: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 14px", background: "#f9fafb", borderBottom: "1px solid #f3f4f6" },
-  badge2: { background: "#111", color: "white", borderRadius: 20, padding: "2px 8px", fontSize: 12, fontWeight: 700 },
+  badge2: { background: "hsl(var(--primary))", color: "white", borderRadius: 20, padding: "2px 8px", fontSize: 12, fontWeight: 700 },
   listItem: { display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", borderBottom: "1px solid #f3f4f6", cursor: "pointer" },
   iconBtn: { width: 30, height: 30, border: "none", borderRadius: 6, cursor: "pointer", fontSize: 13, flexShrink: 0 },
   rightPanel: { background: "white", border: "1px solid #e5e7eb", borderRadius: 12, overflow: "hidden" },
@@ -701,7 +718,7 @@ const s: Record<string, React.CSSProperties> = {
   textarea: { padding: "10px 12px", border: "1px solid #d1d5db", borderRadius: 8, fontSize: 13, color: "#111", background: "#fafafa", outline: "none", width: "100%", boxSizing: "border-box", fontFamily: "system-ui", resize: "vertical" as const },
   previewStrip: { background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, padding: "8px 14px", fontSize: 13, color: "#374151", marginTop: 4 },
   btnRow: { display: "flex", justifyContent: "flex-end", marginTop: 12 },
-  primaryBtn: { height: 44, padding: "0 20px", background: "#111", color: "white", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: "pointer" },
+  primaryBtn: { height: 44, padding: "0 20px", background: "hsl(var(--primary))", color: "white", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: "pointer" },
   table: { width: "100%", borderCollapse: "collapse", fontSize: 13 },
   th: { padding: "10px 12px", background: "#f3f4f6", textAlign: "left", fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.5px", whiteSpace: "nowrap" },
   td: { padding: "10px 12px", borderBottom: "1px solid #f3f4f6", color: "#111", whiteSpace: "nowrap" },

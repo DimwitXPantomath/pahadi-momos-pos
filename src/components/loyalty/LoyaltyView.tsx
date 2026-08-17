@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react"
 import { supabase } from "@/lib/supabase"
+import { sanitizePhoneDigits, parseDbTimestamp } from "@/lib/utils"
 import QRCode from "react-qr-code"
 import type { StampCardProgram, StampCard, RewardType } from "@/types/loyalty"
 import { describeReward } from "@/types/loyalty"
@@ -38,7 +39,7 @@ const s: Record<string, React.CSSProperties> = {
   cardDesc: { fontSize: 13, color: "#6b7280", margin: "0 0 16px" },
   label: { fontSize: 12, fontWeight: 600, color: "#374151", display: "block", marginBottom: 6 },
   input: { width: "100%", padding: "10px 12px", border: "1.5px solid #e5e7eb", borderRadius: 8, fontSize: 14, outline: "none", color: "#111", boxSizing: "border-box" as const },
-  btn: { padding: "10px 20px", background: "#111", color: "white", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: "pointer" },
+  btn: { padding: "10px 20px", background: "hsl(var(--primary))", color: "white", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: "pointer" },
   statCard: { background: "#f9f7f4", borderRadius: 12, padding: "16px", textAlign: "center" as const },
   statVal: { fontSize: 22, fontWeight: 800, color: "#111" },
   statLbl: { fontSize: 12, color: "#6b7280", marginTop: 4 },
@@ -62,7 +63,7 @@ export default function LoyaltyView() {
             style={{
               padding: "8px 20px", borderRadius: 8, border: "none", cursor: "pointer", fontWeight: 600, fontSize: 13,
               background: tab === t ? "white" : "transparent",
-              color: tab === t ? "#111" : "#6b7280",
+              color: tab === t ? "hsl(var(--primary))" : "#6b7280",
               boxShadow: tab === t ? "0 1px 4px rgba(0,0,0,0.08)" : "none",
             }}
           >
@@ -218,7 +219,7 @@ function PointsProgram() {
         <button
           onClick={saveSettings}
           disabled={saving}
-          style={{ ...s.btn, opacity: saving ? 0.7 : 1, background: saved ? "#16a34a" : "#111" }}
+          style={{ ...s.btn, opacity: saving ? 0.7 : 1, background: saved ? "#16a34a" : "hsl(var(--primary))" }}
         >
           {saving ? "Saving..." : saved ? "✓ Saved!" : "Save Settings"}
         </button>
@@ -252,7 +253,7 @@ function PointsProgram() {
                     {row.type === "earned" ? "+" : "-"}{row.points}
                   </td>
                   <td style={{ padding: "8px 12px", fontSize: 12, color: "#6b7280", borderBottom: "1px solid #f3f4f6" }}>
-                    {new Date(row.created_at).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                    {parseDbTimestamp(row.created_at).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
                   </td>
                 </tr>
               ))}
@@ -398,8 +399,8 @@ function StampCardProgramView() {
                 onClick={() => updateProgram({ reward_type: opt.v })}
                 style={{
                   flex: 1, padding: "8px", borderRadius: 8, border: "1.5px solid",
-                  borderColor: program.reward_type === opt.v ? "#111" : "#e5e7eb",
-                  background: program.reward_type === opt.v ? "#111" : "white",
+                  borderColor: program.reward_type === opt.v ? "hsl(var(--primary))" : "#e5e7eb",
+                  background: program.reward_type === opt.v ? "hsl(var(--primary))" : "white",
                   color: program.reward_type === opt.v ? "white" : "#374151",
                   cursor: "pointer", fontWeight: 600, fontSize: 13,
                 }}
@@ -449,7 +450,7 @@ function StampCardProgramView() {
         <button
           onClick={save}
           disabled={saving}
-          style={{ ...s.btn, opacity: saving ? 0.7 : 1, background: saved ? "#16a34a" : "#111" }}
+          style={{ ...s.btn, opacity: saving ? 0.7 : 1, background: saved ? "#16a34a" : "hsl(var(--primary))" }}
         >
           {saving ? "Saving..." : saved ? "✓ Saved!" : "Save Settings"}
         </button>
@@ -465,7 +466,7 @@ function StampCardProgramView() {
             maxLength={10}
             placeholder="📞 Customer phone"
             value={lookupPhone}
-            onChange={e => { setLookupPhone(e.target.value.replace(/\D/g, "").slice(0, 10)); setLookedUpCard(null) }}
+            onChange={e => { setLookupPhone(sanitizePhoneDigits(e.target.value)); setLookedUpCard(null) }}
             style={{ ...s.input, flex: 1 }}
           />
           <input
@@ -545,7 +546,7 @@ function StampCardProgramView() {
                     </span>
                   </td>
                   <td style={{ padding: "8px 12px", fontSize: 12, color: "#6b7280", borderBottom: "1px solid #f3f4f6" }}>
-                    {new Date(row.created_at).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                    {parseDbTimestamp(row.created_at).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
                   </td>
                 </tr>
               ))}

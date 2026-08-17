@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react"
 import { QRCodeCanvas } from "qrcode.react"
 import type { Order, OutletInfo } from "@/types/pos"
+import { parseDbTimestamp } from "@/lib/utils"
 
 interface Props {
   order: Order | null
@@ -88,8 +89,14 @@ export function BillModal({ order, outlet, isOpen, onClose }: Props) {
     setTimeout(() => win.print(), 300)
   }
 
-  const subtotal = order.total / 1.05
-  const gst = order.total - subtotal
+  // Prefer the values actually stored on the order (computed per-line in
+  // useCart to handle mixed tax-inclusive/exclusive items correctly — see
+  // useCart.ts). Falling back to a flat /1.05 split only for old orders
+  // placed before subtotal/gst were saved on the row; that fallback is
+  // wrong for any order containing a tax-inclusive item, but there's no
+  // way to reconstruct the real split after the fact for those.
+  const subtotal = order.subtotal ?? order.total / 1.05
+  const gst = order.gst ?? order.total - subtotal
 
   return (
     <div style={s.overlay} onClick={onClose}>
@@ -113,9 +120,15 @@ export function BillModal({ order, outlet, isOpen, onClose }: Props) {
             {outlet.address && <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2 }}>{outlet.address}</div>}
             {outlet.phone && <div style={{ fontSize: 11, color: "#6b7280" }}>{outlet.phone}</div>}
             {outlet.gst_number && <div style={{ fontSize: 11, color: "#6b7280" }}>GSTIN: {outlet.gst_number}</div>}
-            <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>
-              Token #{order.token_no || order.order_no} · {new Date(order.created_at).toLocaleString("en-IN", { dateStyle: "short", timeStyle: "short" })}
+            <div style={{ fontSize: 13, fontWeight: 700, marginTop: 6 }}>
+              Bill No: {order.bill_no != null ? String(order.bill_no).padStart(4, "0") : "—"}
             </div>
+            <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>
+              Token #{order.token_no || order.order_no} · {parseDbTimestamp(order.created_at).toLocaleString("en-IN", { dateStyle: "short", timeStyle: "short" })}
+            </div>
+            {order.customer_name && (
+              <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>Customer: {order.customer_name}</div>
+            )}
           </div>
 
           {/* Items */}
@@ -138,7 +151,7 @@ export function BillModal({ order, outlet, isOpen, onClose }: Props) {
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 16, fontWeight: 800 }}>
               <span>Total</span>
-              <span style={{ color: "#f97316" }}>₹{order.total.toFixed(2)}</span>
+              <span style={{ color: "hsl(var(--brand-accent))" }}>₹{order.total.toFixed(2)}</span>
             </div>
             <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>
               Payment: {order.payment_method || "CASH"}
@@ -154,6 +167,9 @@ export function BillModal({ order, outlet, isOpen, onClose }: Props) {
 
           <div style={{ textAlign: "center", fontSize: 12, color: "#9ca3af", marginTop: 12 }}>
             Thank you for visiting {outlet.name}! 🙏
+          </div>
+          <div style={{ textAlign: "center", fontSize: 10, color: "#d1d5db", marginTop: 10 }}>
+            Powered by PRAANG
           </div>
         </div>
 
@@ -195,7 +211,7 @@ const s: Record<string, React.CSSProperties> = {
     borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: "pointer",
   },
   closeBtn: {
-    flex: 1, height: 44, background: "#111", color: "white",
+    flex: 1, height: 44, background: "hsl(var(--primary))", color: "white",
     border: "none", borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: "pointer",
   },
 }

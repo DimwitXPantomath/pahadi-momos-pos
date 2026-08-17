@@ -22,6 +22,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Loyalty Points",  value: "loyalty",     icon: "⭐",  roles: ["owner", "manager"] },
   { label: "Reports",         value: "reports",     icon: "📤",  roles: ["owner"] },
   { label: "Settings",        value: "settings",    icon: "⚙️",  roles: ["owner"] },
+  { label: "Staff",           value: "staff",       icon: "👥",  roles: ["owner","manager"] },
   { label: "Inventory",      value: "inventory", icon: "📦", roles: ["owner","manager"] },
   { label: "Expenses / P&L", value: "expenses",  icon: "💸", roles: ["owner"] },
   { label: "Business Setup",  value: "resources", icon: "🚀", roles: ["owner"] },
@@ -37,7 +38,7 @@ type Props = {
 
 export default function Layout({ view, setView, todayOrderCount }: Props) {
   const [open, setOpen] = useState(false)
-  const { profile, signOut } = useAuth()
+  const { profile, profileError, refetchProfile, signOut } = useAuth()
   const navigate = useNavigate()
 
   // Fail closed while profile hasn't loaded yet (was `: true` — showed
@@ -149,6 +150,22 @@ export default function Layout({ view, setView, todayOrderCount }: Props) {
         </div>
 
         {/* Nav items */}
+        {!profile && (
+          <div style={{ margin: "0 16px 12px", padding: "12px 14px", borderRadius: 10, background: profileError ? "#fef2f2" : "#f3f4f6", border: `1px solid ${profileError ? "#fecaca" : "#e5e7eb"}` }}>
+            {profileError ? (
+              <>
+                <p style={{ fontSize: 12, fontWeight: 700, color: "#dc2626", margin: "0 0 4px" }}>Menu isn't loading</p>
+                <p style={{ fontSize: 11, color: "#991b1b", margin: "0 0 8px", lineHeight: 1.4 }}>{profileError}</p>
+                <button
+                  onClick={refetchProfile}
+                  style={{ fontSize: 11, fontWeight: 700, color: "white", background: "#dc2626", border: "none", borderRadius: 6, padding: "5px 10px", cursor: "pointer" }}
+                >Try again</button>
+              </>
+            ) : (
+              <p style={{ fontSize: 12, color: "#6b7280", margin: 0 }}>Loading your menu…</p>
+            )}
+          </div>
+        )}
         <nav style={styles.nav}>
           {visibleItems.map(item => (
             <button
@@ -156,7 +173,7 @@ export default function Layout({ view, setView, todayOrderCount }: Props) {
               onClick={() => handleNav(item.value)}
               style={{
                 ...styles.navItem,
-                background: view === item.value ? "#f97316" : "transparent",
+                background: view === item.value ? "hsl(var(--brand-accent))" : "transparent",
                 color: view === item.value ? "white" : "rgba(255,255,255,0.8)",
                 fontWeight: view === item.value ? 700 : 400,
               }}
@@ -252,7 +269,7 @@ const styles: Record<string, React.CSSProperties> = {
     left: 0,
     bottom: 0,
     width: 280,
-    background: "#111",
+    background: "hsl(var(--primary))",
     zIndex: 50,
     display: "flex",
     flexDirection: "column",

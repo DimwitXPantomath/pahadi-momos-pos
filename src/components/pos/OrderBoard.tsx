@@ -1,35 +1,33 @@
 import { useState } from "react"
 import { OrderStatus } from "@/types/pos"
 import type { Order, POSSettings } from "@/types/pos"
+import { parseDbTimestamp } from "@/lib/utils"
 
 type PaymentMethod = "CASH" | "CARD" | "UPI"
 
 type Props = {
-  placedOrders: Order[]
   preparingOrders: Order[]
   readyOrders: Order[]
   collectedOrders: Order[]
   settings: POSSettings
   getOrderTime: (createdAt: string, closedAt?: string | null) => string
   getOrderColor: (createdAt: string) => string
-  startPreparing: (id: string, minutes: number) => void
   markReady: (id: string) => void
   collectOrder: (id: string) => void
   updatePayment: (id: string, method: PaymentMethod) => void
   markPaid: (id: string) => void
 }
 
-type ColumnProps = Props & { title: string; emoji: string; orders: Order[] }
+type ColumnProps = Omit<Props, "preparingOrders" | "readyOrders" | "collectedOrders"> & { title: string; emoji: string; orders: Order[] }
 
 function OrderCard({
   order, settings, getOrderTime, getOrderColor,
-  startPreparing, markReady, collectOrder, updatePayment, markPaid
+  markReady, collectOrder, updatePayment, markPaid
 }: {
   order: Order
   settings: POSSettings
   getOrderTime: (createdAt: string, closedAt?: string | null) => string
   getOrderColor: (createdAt: string) => string
-  startPreparing: (id: string, minutes: number) => void
   markReady: (id: string) => void
   collectOrder: (id: string) => void
   updatePayment: (id: string, method: PaymentMethod) => void
@@ -85,7 +83,7 @@ function OrderCard({
       </div>
 
       {/* Total + payment */}
-      <div style={{ fontSize: 12, fontWeight: 700, color: "#f97316", marginBottom: 8 }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: "hsl(var(--brand-accent))", marginBottom: 8 }}>
         ₹{order.total?.toFixed(0)}
         <span style={{ fontWeight: 400, color: "#6b7280", marginLeft: 6 }}>
           · {order.payment_method || selectedPayment}
@@ -118,36 +116,12 @@ function OrderCard({
         </div>
       )}
 
-      {/* PLACED actions */}
-      {order.status === OrderStatus.PLACED && (
-        <div>
-          <p style={{ fontSize: 11, color: "#6b7280", marginBottom: 4 }}>Start preparing in:</p>
-          <div style={{ display: "flex", gap: 4 }}>
-            {[5, 10, 15].map(min => (
-              <button
-                key={min}
-                onClick={() => {
-                  console.log("startPreparing called:", order.id, min)
-                  startPreparing(order.id, min)
-                }}
-                style={{
-                  flex: 1, padding: "6px 0",
-                  background: "#111", color: "white",
-                  border: "none", borderRadius: 6,
-                  fontSize: 12, fontWeight: 600, cursor: "pointer",
-                }}
-              >{min} min</button>
-            ))}
-          </div>
-        </div>
-      )}
-
       {/* PREPARING actions */}
       {order.status === OrderStatus.PREPARING && (
         <div>
           {order.ready_at && (
-            <p style={{ fontSize: 11, color: "#f97316", marginBottom: 6 }}>
-              ⏱ Ready by {new Date(order.ready_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+            <p style={{ fontSize: 11, color: "hsl(var(--brand-accent))", marginBottom: 6 }}>
+              ⏱ Ready by {parseDbTimestamp(order.ready_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
             </p>
           )}
           <button
@@ -173,8 +147,8 @@ function OrderCard({
                 style={{
                   flex: 1, padding: "5px 0",
                   border: "1.5px solid",
-                  borderColor: selectedPayment === method ? "#111" : "#e5e7eb",
-                  background: selectedPayment === method ? "#111" : "white",
+                  borderColor: selectedPayment === method ? "hsl(var(--primary))" : "#e5e7eb",
+                  background: selectedPayment === method ? "hsl(var(--primary))" : "white",
                   color: selectedPayment === method ? "white" : "#374151",
                   borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: "pointer",
                 }}
@@ -187,7 +161,7 @@ function OrderCard({
             onClick={handleCollect}
             style={{
               width: "100%", padding: "8px",
-              background: "#111", color: "white",
+              background: "hsl(var(--primary))", color: "white",
               border: "none", borderRadius: 8,
               fontSize: 13, fontWeight: 700, cursor: "pointer",
             }}
@@ -198,9 +172,9 @@ function OrderCard({
   )
 }
 
-function OrderColumn({ title, emoji, orders, settings, getOrderTime, getOrderColor, startPreparing, markReady, collectOrder, updatePayment, markPaid }: ColumnProps) {
+function OrderColumn({ title, emoji, orders, settings, getOrderTime, getOrderColor, markReady, collectOrder, updatePayment, markPaid }: ColumnProps) {
   const sorted = settings.autoSortOrders
-    ? [...orders].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+    ? [...orders].sort((a, b) => parseDbTimestamp(a.created_at).getTime() - parseDbTimestamp(b.created_at).getTime())
     : orders
 
   return (
@@ -218,7 +192,6 @@ function OrderColumn({ title, emoji, orders, settings, getOrderTime, getOrderCol
           settings={settings}
           getOrderTime={getOrderTime}
           getOrderColor={getOrderColor}
-          startPreparing={startPreparing}
           markReady={markReady}
           collectOrder={collectOrder}
           updatePayment={updatePayment}
@@ -230,22 +203,21 @@ function OrderColumn({ title, emoji, orders, settings, getOrderTime, getOrderCol
 }
 
 export default function OrderBoard({
-  placedOrders, preparingOrders, readyOrders, collectedOrders,
+  preparingOrders, readyOrders, collectedOrders,
   settings, getOrderTime, getOrderColor,
-  startPreparing, markReady, collectOrder, updatePayment, markPaid,
+  markReady, collectOrder, updatePayment, markPaid,
 }: Props) {
-  const shared = { settings, getOrderTime, getOrderColor, startPreparing, markReady, collectOrder, updatePayment, markPaid }
+  const shared = { settings, getOrderTime, getOrderColor, markReady, collectOrder, updatePayment, markPaid }
 
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <h2 style={{ fontSize: 22, fontWeight: 800, color: "#111", margin: 0 }}>Orders</h2>
         <span style={{ fontSize: 13, color: "#6b7280" }}>
-          {placedOrders.length + preparingOrders.length + readyOrders.length} active
+          {preparingOrders.length + readyOrders.length} active
         </span>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
-        <OrderColumn title="Placed" emoji="📋" orders={placedOrders} {...shared} />
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
         <OrderColumn title="Preparing" emoji="👨‍🍳" orders={preparingOrders} {...shared} />
         <OrderColumn title="Ready" emoji="🎉" orders={readyOrders} {...shared} />
         <OrderColumn title="Collected" emoji="✅" orders={collectedOrders} {...shared} />

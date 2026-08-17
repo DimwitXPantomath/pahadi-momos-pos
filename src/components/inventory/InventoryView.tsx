@@ -55,7 +55,13 @@ const OUTER_TO_CATEGORY: Record<OuterTab, ItemCategory | null> = {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export default function InventoryView() {
+type Props = {
+  // Passed down from Index.tsx so IngredientsPage's Reorder Alerts tab
+  // can switch the main view to Procurement after queueing items.
+  onGoToProcurement?: () => void
+}
+
+export default function InventoryView({ onGoToProcurement }: Props) {
   const [outerTab, setOuterTab] = useState<OuterTab>("ingredients")
   const [innerTab, setInnerTab] = useState<InnerTab>("stock")
 
@@ -252,10 +258,10 @@ export default function InventoryView() {
             onClick={() => switchOuter(t.key)}
             style={{
               ...s.outerTabBtn,
-              background: outerTab === t.key ? "#111" : "white",
+              background: outerTab === t.key ? "hsl(var(--primary))" : "white",
               color: outerTab === t.key ? "white" : "#374151",
               fontWeight: outerTab === t.key ? 700 : 500,
-              borderBottom: outerTab === t.key ? "2px solid #111" : "2px solid transparent",
+              borderBottom: outerTab === t.key ? "2px solid hsl(var(--primary))" : "2px solid transparent",
             }}
           >
             {t.label}
@@ -265,7 +271,7 @@ export default function InventoryView() {
 
       {/* ── INGREDIENTS TAB → delegate entirely to IngredientsPage ── */}
       {outerTab === "ingredients" && (
-        <IngredientsPage />
+        <IngredientsPage onGoToProcurement={onGoToProcurement} />
       )}
 
       {/* ── FINISHED GOODS / PACKAGING TABS ── */}
@@ -307,7 +313,7 @@ export default function InventoryView() {
                 onClick={() => { setInnerTab(t.key as InnerTab); setError(""); setSuccess("") }}
                 style={{
                   ...s.tabBtn,
-                  background: innerTab === t.key ? "#111" : "white",
+                  background: innerTab === t.key ? "hsl(var(--primary))" : "white",
                   color: innerTab === t.key ? "white" : "#374151",
                   fontWeight: innerTab === t.key ? 700 : 400,
                 }}
@@ -692,7 +698,7 @@ const s: Record<string, React.CSSProperties> = {
     fontSize: 14,
   },
   btnRow: { display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 8 },
-  primaryBtn: { height: 44, padding: "0 20px", background: "#111", color: "white", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: "pointer" },
+  primaryBtn: { height: 44, padding: "0 20px", background: "hsl(var(--primary))", color: "white", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: "pointer" },
   tableWrap: { overflowX: "auto" },
   table: { width: "100%", borderCollapse: "collapse", fontSize: 13 },
   th: { padding: "10px 12px", background: "#f3f4f6", textAlign: "left", fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.5px", whiteSpace: "nowrap" },

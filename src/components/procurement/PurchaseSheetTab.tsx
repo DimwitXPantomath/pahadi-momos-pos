@@ -135,7 +135,7 @@ const s: Record<string, React.CSSProperties> = {
   recipeGrid: { display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 },
   recipeRow: { display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: "#fafafa", borderRadius: 8 },
   numInput: { width: 64, padding: "6px 8px", border: "1.5px solid #e5e7eb", borderRadius: 6, fontSize: 13, outline: "none", textAlign: "right" as const },
-  btn: { padding: "8px 16px", background: "#111", color: "white", border: "none", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer" },
+  btn: { padding: "8px 16px", background: "hsl(var(--primary))", color: "white", border: "none", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer" },
   table: { width: "100%", borderCollapse: "collapse" as const },
   th: { textAlign: "left" as const, padding: "8px 12px", fontSize: 12, fontWeight: 600, color: "#6b7280", borderBottom: "1px solid #e5e7eb" },
   td: { padding: "8px 12px", fontSize: 13, borderBottom: "1px solid #f3f4f6", color: "#111" },

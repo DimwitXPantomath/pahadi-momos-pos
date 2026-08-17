@@ -1,14 +1,17 @@
 import { supabase } from "@/lib/supabase"
+import { parseDbTimestamp } from "@/lib/utils"
 import { OrderStatus } from "@/types/pos"
 import { useState, useEffect, useMemo, useRef, useCallback } from "react"
 import type { MenuItem, Order, POSSettings, OrderItem, Ingredient, SubRecipe, Recipe, RecipeItem } from "@/types/pos"
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts"
 import QRCode from "react-qr-code"
 import Settings from "@/components/Settings"
+import StaffInvites from "@/components/settings/StaffInvites"
 import Layout from "@/components/Layout"
 import MenuGrid from "@/components/pos/MenuGrid"
 import CartPanel, { type PrintMode } from "@/components/pos/CartPanel"
 import { BillModal } from "@/components/pos/BillModal"
+import IncomingOrderModal from "@/components/pos/IncomingOrderModal"
 import TableSelector from "@/components/pos/TableSelector"
 import OrderBoard from "@/components/pos/OrderBoard"
 import { useAuth } from "@/contexts/AuthContext"
@@ -33,6 +36,7 @@ import BusinessResourcesView from "@/components/resources/BusinessResourcesView"
 import ChecklistsView from "@/components/checklists/ChecklistsView"
 import PostersView from "@/components/posters/PostersView"
 import DishTaggingModal from "@/components/menu/DishTaggingModal"
+import MenuManagementView from "@/components/menu/MenuManagementView"
 
 const OUTLET_ID = "demo-outlet"
 
@@ -55,6 +59,7 @@ type View =
   | "resources"
   | "checklists"
   | "posters"
+  | "staff"
 
 type PaymentMethod = "CASH" | "CARD" | "UPI"
 
@@ -75,22 +80,40 @@ export default function Index() {
     qrOrderId, setQrOrderId, alertedOrdersRef,
     placedOrders, preparingOrders, readyOrders, collectedOrders,
     fetchOrders, subscribeToOrders,
-    startPreparing, markReady, collectOrder, updatePayment, markPaid,
+    startPreparing, rejectOrder, markReady, collectOrder, updatePayment, markPaid,
     getOrderTime, getOrderColor,
   } = useOrders()
 
   const [billOrder, setBillOrder] = useState<any>(null)
   const [showBill, setShowBill] = useState(false)
 
+  // Real outlet branding for the printed bill — was previously hardcoded
+  // to name: "Praang" (the product's own name, not the business using it).
+  // Falls back to "Praang" only if no branding row has been saved yet in
+  // Settings, matching Settings.tsx's own fallback.
+  const [outletBranding, setOutletBranding] = useState<{ name: string; address: string; phone: string }>({
+    name: "Praang", address: "", phone: "",
+  })
+  useEffect(() => {
+    supabase.from("outlet_branding").select("business_name, address, phone").eq("outlet_id", OUTLET_ID).maybeSingle()
+      .then(({ data }) => {
+        if (!data) return
+        setOutletBranding({
+          name: data.business_name || "Praang",
+          address: data.address || "",
+          phone: data.phone || "",
+        })
+      })
+  }, [])
+
   const {
     menuItems, setMenuItems, categories, setCategories,
     confirmState, handleConfirm, handleCancel,
     newItemName, setNewItemName, newItemPrice, setNewItemPrice,
     newItemCategory, setNewItemCategory, newItemIsVeg, setNewItemIsVeg,
+    newItemTaxIncluded, setNewItemTaxIncluded,
     newCategoryName, setNewCategoryName,
     activeCategory, setActiveCategory,
-    manageCategory, setManageCategory,
-    manageTab, setManageTab,
     searchQuery, setSearchQuery,
     vegFilter, setVegFilter,
     fetchMenu, fetchCategories, fetchMostOrdered,
@@ -181,7 +204,7 @@ export default function Index() {
 
   const checkOrderDelay = useCallback((order: Order) => {
     if (order.status !== OrderStatus.PLACED) return
-    const mins = (Date.now() - new Date(order.created_at).getTime()) / 60000
+    const mins = (Date.now() - parseDbTimestamp(order.created_at).getTime()) / 60000
     if (mins > settings.delayAlertMinutes && !alertedOrdersRef.current.has(order.id)) {
       alertedOrdersRef.current.add(order.id)
       if (settings.soundAlert && audioRef.current) {
@@ -198,6 +221,7 @@ export default function Index() {
     customerName?: string; customerPhone?: string
     splitPayments?: Record<string, number>
     stampProgramId?: string; applyStampReward?: boolean; stampCardIdToRedeem?: string
+    prepMinutes?: number
   }) => {
     if (cart.length === 0) { alert("Cart empty"); return }
     if (isPlacingOrder) return
@@ -216,14 +240,33 @@ export default function Index() {
       ? "SPLIT:" + Object.entries(opts.splitPayments).map(([k, v]) => `${k}${Math.round(v)}`).join("+")
       : null
 
+    // Merge per-item kitchen notes (e.g. "no onion") into the cart items —
+    // previously opts.cartNotes was accepted here but never actually used
+    // anywhere in this function, so notes typed in CartPanel were silently
+    // dropped: never saved to the order, never printed on the KOT.
+    const itemsWithNotes = cart.map(item =>
+      opts?.cartNotes?.[item.id] ? { ...item, notes: opts.cartNotes[item.id] } : item
+    )
+
+    // Skip the "Placed" holding state for POS orders — the staff member
+    // placing this order already picked how long it'll take (the prep-time
+    // step in CheckoutFlowModal), so there's no reason to insert it as
+    // PLACED and rely on someone remembering to come back and tap "Start
+    // preparing." Insert straight into PREPARING with ready_at already set.
+    // (Online/self-order orders are a separate insert path — place_online_order
+    // RPC — and still land in PLACED, since no staff is present when those
+    // arrive; someone has to notice and accept them on the board.)
+    const readyAt = new Date(Date.now() + (opts?.prepMinutes ?? 10) * 60 * 1000).toISOString()
+
     const payload = {
       outlet_id: OUTLET_ID,
-      items: cart,
+      items: itemsWithNotes,
       subtotal,
       gst,
       discount: discountAmount,
       total: finalTotal,
-      status: OrderStatus.PLACED,
+      status: OrderStatus.PREPARING,
+      ready_at: readyAt,
       payment_method: splitLabel ?? effectivePayment,
       notes: opts?.orderNotes || orderNotes || null,
       loyalty_points_earned: Math.floor(finalTotal / 100),
@@ -341,7 +384,7 @@ export default function Index() {
     }
 
     // Print based on selected mode
-    const stationMap = splitItemsByStation(cart)
+    const stationMap = splitItemsByStation(itemsWithNotes)
     if (printMode === "KOT" || printMode === "KOT+BILL") {
       Object.entries(stationMap).forEach(([station, items]) => {
         printKOT({ order: data, items, station })
@@ -409,10 +452,6 @@ export default function Index() {
   }, [])
 
   useEffect(() => {
-    if (categories.length > 0 && !manageCategory) setManageCategory(categories[0].id)
-  }, [categories])
-
-  useEffect(() => {
     if (categories.length > 0 && !activeCategory) setActiveCategory("all")
   }, [categories])
 
@@ -472,21 +511,15 @@ export default function Index() {
     if (data) { setRecipeItems(prev => [...prev, data]); setRecipeQty("") }
   }
 
-  const generatePurchaseOrder = async () => {
-    const { data } = await supabase.from("ingredients").select("*")
-    if (!data) return
-    const low = data.filter(i => i.current_stock < i.min_stock)
-    if (!low.length) { alert("No items needed"); return }
-    for (const ing of low) {
-      const qty = (ing.min_stock - ing.current_stock) * 2
-      const { data: vendor } = await supabase.from("ingredient_prices").select("*").eq("ingredient_id", ing.id).order("price_per_unit", { ascending: true }).limit(1).single()
-      if (!vendor) continue
-      const { data: po } = await supabase.from("purchase_orders").insert({ vendor_name: vendor.vendor_name, status: "PENDING" }).select().single()
-      if (!po) continue
-      await supabase.from("purchase_order_items").insert([{ purchase_order_id: po.id, ingredient_id: ing.id, quantity: qty, price: vendor.price_per_unit }])
-    }
-    alert("Purchase Orders Generated")
-  }
+  // REMOVED: generatePurchaseOrder used to live here — dead code, never
+  // called anywhere in this file, and already broken (queried
+  // `ingredient_prices`, a table that has never existed in this schema,
+  // and read `ing.min_stock`/`ing.current_stock`, columns that don't
+  // exist either — the real names are min_stock_level and a value that
+  // has to come from inventory_stock, not the ingredients row). The
+  // real, working version of "what's low, reorder it" is now
+  // IngredientsPage.tsx's Reorder Alerts tab, which reads the correct
+  // tables and feeds into a real Procurement request.
 
   const getSmartSuggestions = async () => {
     const result: string[] = []
@@ -531,7 +564,7 @@ export default function Index() {
     formField: { display: "flex", flexDirection: "column", gap: 6, marginBottom: 16 },
     label: { fontSize: 13, fontWeight: 600, color: "#374151" },
     input: { padding: "10px 14px", border: "1.5px solid #e5e7eb", borderRadius: 8, fontSize: 14, outline: "none", color: "#111", background: "white" },
-    primaryBtn: { background: "#111", color: "white", border: "none", borderRadius: 8, padding: "10px 20px", fontSize: 14, fontWeight: 600, cursor: "pointer", width: "100%" },
+    primaryBtn: { background: "hsl(var(--primary))", color: "white", border: "none", borderRadius: 8, padding: "10px 20px", fontSize: 14, fontWeight: 600, cursor: "pointer", width: "100%" },
     statCard: { background: "#f9f7f4", borderRadius: 12, padding: "16px", textAlign: "center" },
   }
 
@@ -626,14 +659,12 @@ export default function Index() {
       {/* ── ORDERS VIEW ────────────────────────────────────────── */}
       {view === "orders" && (
         <OrderBoard
-          placedOrders={placedOrders}
           preparingOrders={preparingOrders}
           readyOrders={readyOrders}
           collectedOrders={collectedOrders}
           settings={settings}
           getOrderTime={getOrderTime}
           getOrderColor={getOrderColor}
-          startPreparing={startPreparing}
           markReady={markReady}
           collectOrder={collectOrder}
           updatePayment={updatePayment}
@@ -649,15 +680,15 @@ export default function Index() {
             <p style={{ color: "#9ca3af", textAlign: "center", padding: "40px 0" }}>No orders yet</p>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {[...orders].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).map(order => (
+              {[...orders].sort((a, b) => parseDbTimestamp(b.created_at).getTime() - parseDbTimestamp(a.created_at).getTime()).map(order => (
                 <div key={order.id} style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: 10, padding: "12px 16px", display: "flex", alignItems: "center", gap: 12 }}>
                   <span style={{ fontWeight: 800, fontSize: 16, minWidth: 40 }}>#{order.token_no}</span>
                   <div style={{ flex: 1 }}>
                     <p style={{ fontSize: 13, margin: 0, color: "#374151" }}>{order.items?.map((i: OrderItem) => `${i.name} ×${i.quantity}`).join(", ")}</p>
-                    <p style={{ fontSize: 11, color: "#9ca3af", margin: "2px 0 0" }}>{new Date(order.created_at).toLocaleString("en-IN")}</p>
+                    <p style={{ fontSize: 11, color: "#9ca3af", margin: "2px 0 0" }}>{parseDbTimestamp(order.created_at).toLocaleString("en-IN")}</p>
                   </div>
                   <div style={{ textAlign: "right" }}>
-                    <p style={{ fontWeight: 700, color: "#f97316", margin: 0 }}>₹{order.total}</p>
+                    <p style={{ fontWeight: 700, color: "hsl(var(--brand-accent))", margin: 0 }}>₹{order.total}</p>
                     <p style={{ fontSize: 11, color: "#6b7280", margin: 0 }}>{order.payment_method} · {order.status}</p>
                   </div>
                 </div>
@@ -669,109 +700,22 @@ export default function Index() {
 
       {/* ── MENU MANAGEMENT VIEW ───────────────────────────────── */}
       {view === "menu_manage" && (
-        <div style={{ maxWidth: 900, margin: "0 auto" }}>
-          <div style={{ marginBottom: 24 }}>
-            <h2 style={{ fontSize: 22, fontWeight: 800, color: "#111", margin: 0 }}>Menu Management</h2>
-            <p style={{ fontSize: 13, color: "#6b7280", margin: "4px 0 0" }}>Manage your categories and menu items</p>
-          </div>
-
-          <div style={{ display: "flex", gap: 0, background: "#f3f4f6", borderRadius: 10, padding: 4, marginBottom: 24, width: "fit-content" }}>
-            {(["categories", "items"] as const).map(tab => (
-              <button key={tab} onClick={() => setManageTab(tab)} style={{ padding: "8px 24px", borderRadius: 8, border: "none", cursor: "pointer", fontWeight: 600, fontSize: 13, background: manageTab === tab ? "white" : "transparent", color: manageTab === tab ? "#111" : "#6b7280", boxShadow: manageTab === tab ? "0 1px 4px rgba(0,0,0,0.08)" : "none", transition: "all .15s" }}>
-                {tab === "categories" ? "🏷️ Categories" : "🍽️ Menu Items"}
-              </button>
-            ))}
-          </div>
-
-          {manageTab === "categories" && (
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
-              <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: 14, padding: "20px 24px" }}>
-                <h3 style={{ fontWeight: 700, fontSize: 15, margin: "0 0 16px" }}>➕ Add New Category</h3>
-                <input placeholder="e.g. Steam Momos, Drinks..." value={newCategoryName} onChange={e => setNewCategoryName(e.target.value)} onKeyDown={e => e.key === "Enter" && addCategory()} style={{ width: "100%", padding: "10px 12px", border: "1.5px solid #e5e7eb", borderRadius: 8, fontSize: 14, outline: "none", marginBottom: 12 }} />
-                <button onClick={addCategory} style={{ width: "100%", padding: "10px", background: "#111", color: "white", border: "none", borderRadius: 8, fontWeight: 700, fontSize: 14, cursor: "pointer" }}>Add Category</button>
-              </div>
-              <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: 14, padding: "20px 24px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-                  <h3 style={{ fontWeight: 700, fontSize: 15, margin: 0 }}>Your Categories</h3>
-                  <span style={{ fontSize: 12, color: "#6b7280", background: "#f3f4f6", padding: "2px 8px", borderRadius: 20 }}>{categories.length} total</span>
-                </div>
-                {categories.length === 0 ? (
-                  <p style={{ color: "#9ca3af", textAlign: "center", padding: "20px 0", fontSize: 13 }}>No categories yet</p>
-                ) : categories.map(cat => (
-                  <div key={cat.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", background: "#f9f9f9", borderRadius: 8, marginBottom: 8 }}>
-                    <div>
-                      <p style={{ fontWeight: 600, fontSize: 14, margin: 0 }}>{cat.name}</p>
-                      <p style={{ fontSize: 11, color: "#9ca3af", margin: 0 }}>{menuItems.filter(i => i.category_id === cat.id).length} items</p>
-                    </div>
-                    <button onClick={() => deleteCategory(cat.id)} style={{ padding: "5px 12px", background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 6, fontSize: 12, cursor: "pointer", fontWeight: 600 }}>Delete</button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {manageTab === "items" && (
-            <div style={{ display: "grid", gridTemplateColumns: "340px 1fr", gap: 20 }}>
-              <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: 14, padding: "20px 24px", height: "fit-content" }}>
-                <h3 style={{ fontWeight: 700, fontSize: 15, margin: "0 0 16px" }}>➕ Add New Item</h3>
-                <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                  <div><label style={{ fontSize: 12, fontWeight: 600, display: "block", marginBottom: 6 }}>Item Name *</label><input placeholder="e.g. Steam Chicken Momos" value={newItemName} onChange={e => setNewItemName(e.target.value)} style={{ width: "100%", padding: "10px 12px", border: "1.5px solid #e5e7eb", borderRadius: 8, fontSize: 14, outline: "none" }} /></div>
-                  <div><label style={{ fontSize: 12, fontWeight: 600, display: "block", marginBottom: 6 }}>Price (₹) *</label><input type="number" placeholder="120" value={newItemPrice} onChange={e => setNewItemPrice(e.target.value)} style={{ width: "100%", padding: "10px 12px", border: "1.5px solid #e5e7eb", borderRadius: 8, fontSize: 14, outline: "none" }} /></div>
-                  <div>
-                    <label style={{ fontSize: 12, fontWeight: 600, display: "block", marginBottom: 6 }}>Category *</label>
-                    <select value={newItemCategory} onChange={e => setNewItemCategory(e.target.value)} style={{ width: "100%", padding: "10px 12px", border: "1.5px solid #e5e7eb", borderRadius: 8, fontSize: 14, outline: "none", background: "white" }}>
-                      <option value="">Select a category</option>
-                      {categories.map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
-                    </select>
-                  </div>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    {([true, false] as const).map(isVeg => (
-                      <button key={String(isVeg)} onClick={() => setNewItemIsVeg(isVeg)} style={{ flex: 1, padding: "8px", borderRadius: 8, border: "1.5px solid", borderColor: newItemIsVeg === isVeg ? (isVeg ? "#16a34a" : "#dc2626") : "#e5e7eb", background: newItemIsVeg === isVeg ? (isVeg ? "#f0fdf4" : "#fef2f2") : "white", color: newItemIsVeg === isVeg ? (isVeg ? "#16a34a" : "#dc2626") : "#374151", cursor: "pointer", fontWeight: 600, fontSize: 13 }}>
-                        {isVeg ? "🟢 Veg" : "🔴 Non-veg"}
-                      </button>
-                    ))}
-                  </div>
-                  <button onClick={addMenuItem} disabled={!newItemName || !newItemPrice || !newItemCategory} style={{ padding: "11px", background: (!newItemName || !newItemPrice || !newItemCategory) ? "#e5e7eb" : "#111", color: (!newItemName || !newItemPrice || !newItemCategory) ? "#9ca3af" : "white", border: "none", borderRadius: 8, fontWeight: 700, fontSize: 14, cursor: (!newItemName || !newItemPrice || !newItemCategory) ? "not-allowed" : "pointer" }}>Add to Menu</button>
-                </div>
-              </div>
-              <div>
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
-                  <button onClick={() => setManageCategory(null)} style={{ padding: "5px 14px", borderRadius: 20, border: "1.5px solid", fontSize: 12, fontWeight: 600, cursor: "pointer", borderColor: manageCategory === null ? "#111" : "#e5e7eb", background: manageCategory === null ? "#111" : "white", color: manageCategory === null ? "white" : "#374151" }}>All ({menuItems.length})</button>
-                  {categories.map(cat => (
-                    <button key={cat.id} onClick={() => setManageCategory(cat.id)} style={{ padding: "5px 14px", borderRadius: 20, border: "1.5px solid", fontSize: 12, fontWeight: 600, cursor: "pointer", borderColor: manageCategory === cat.id ? "#111" : "#e5e7eb", background: manageCategory === cat.id ? "#111" : "white", color: manageCategory === cat.id ? "white" : "#374151" }}>{cat.name} ({menuItems.filter(i => i.category_id === cat.id).length})</button>
-                  ))}
-                </div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 10 }}>
-                  {(manageCategory ? menuItems.filter(i => i.category_id === manageCategory) : menuItems).map(item => (
-                    <div key={item.id} style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: 12, padding: "14px 16px", display: "flex", alignItems: "center", gap: 12 }}>
-                      <div style={{ width: 10, height: 10, borderRadius: "50%", background: item.is_veg ? "#16a34a" : "#dc2626", flexShrink: 0 }} />
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <p style={{ fontWeight: 700, fontSize: 13, margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.name}</p>
-                        <p style={{ fontSize: 12, color: "#6b7280", margin: "2px 0 0" }}>₹{item.price} · {categories.find(c => c.id === item.category_id)?.name || "—"}</p>
-                      </div>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-end" }}>
-                        <button onClick={() => toggleAvailability(item.id, item.available)} style={{ padding: "3px 10px", borderRadius: 6, border: "1px solid", fontSize: 11, cursor: "pointer", fontWeight: 600, borderColor: item.available ? "#bbf7d0" : "#fecaca", background: item.available ? "#f0fdf4" : "#fef2f2", color: item.available ? "#16a34a" : "#dc2626" }}>{item.available ? "Available" : "Out of stock"}</button>
-                        <button
-                          onClick={() => setTaggingItem(item)}
-                          style={{
-                            padding: "3px 10px", borderRadius: 6, border: "1px solid",
-                            fontSize: 11, cursor: "pointer", fontWeight: 600,
-                            borderColor: item.dietary_type && item.spice_level != null ? "#99d6c8" : "#fde68a",
-                            background: item.dietary_type && item.spice_level != null ? "#e7f2ef" : "#fffbeb",
-                            color: item.dietary_type && item.spice_level != null ? "#1B6E5C" : "#b45309",
-                          }}
-                        >
-                          {item.dietary_type && item.spice_level != null ? "🏷️ Tagged" : "🏷️ Tag"}
-                        </button>
-                        <button onClick={() => deleteMenuItem(item.id)} style={{ padding: "3px 10px", borderRadius: 6, border: "1px solid #fecaca", background: "#fef2f2", color: "#dc2626", fontSize: 11, cursor: "pointer", fontWeight: 600 }}>Delete</button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
+        <MenuManagementView
+          menuItems={menuItems}
+          categories={categories}
+          newItemName={newItemName} setNewItemName={setNewItemName}
+          newItemPrice={newItemPrice} setNewItemPrice={setNewItemPrice}
+          newItemCategory={newItemCategory} setNewItemCategory={setNewItemCategory}
+          newItemIsVeg={newItemIsVeg} setNewItemIsVeg={setNewItemIsVeg}
+          newItemTaxIncluded={newItemTaxIncluded} setNewItemTaxIncluded={setNewItemTaxIncluded}
+          newCategoryName={newCategoryName} setNewCategoryName={setNewCategoryName}
+          addMenuItem={addMenuItem}
+          addCategory={addCategory}
+          deleteCategory={deleteCategory}
+          deleteMenuItem={deleteMenuItem}
+          toggleAvailability={toggleAvailability}
+          setTaggingItem={setTaggingItem}
+        />
       )}
 
       {taggingItem && (
@@ -791,6 +735,8 @@ export default function Index() {
           setSettings={setSettings}
         />
       )}
+
+      {view === "staff" && <StaffInvites />}
 
       {sizeSelectorItem && (
 
@@ -927,13 +873,13 @@ export default function Index() {
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, margin: "16px 0" }}>
               <div style={viewStyles.statCard}>
                 <div style={{ fontSize: 22, fontWeight: 800, color: "#111" }}>
-                  {orders.filter(o => new Date(o.created_at).toDateString() === new Date().toDateString()).length}
+                  {orders.filter(o => parseDbTimestamp(o.created_at).toDateString() === new Date().toDateString()).length}
                 </div>
                 <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>Orders today</div>
               </div>
               <div style={viewStyles.statCard}>
                 <div style={{ fontSize: 22, fontWeight: 800, color: "#111" }}>
-                  ₹{orders.filter(o => new Date(o.created_at).toDateString() === new Date().toDateString()).reduce((sum, o) => sum + o.total, 0).toFixed(0)}
+                  ₹{orders.filter(o => parseDbTimestamp(o.created_at).toDateString() === new Date().toDateString()).reduce((sum, o) => sum + o.total, 0).toFixed(0)}
                 </div>
                 <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>Revenue today</div>
               </div>
@@ -949,7 +895,7 @@ export default function Index() {
             <button
               style={{ ...viewStyles.primaryBtn, background: "#25d366", marginTop: 8 }}
               onClick={() => {
-                const todayOrders = orders.filter(o => new Date(o.created_at).toDateString() === new Date().toDateString())
+                const todayOrders = orders.filter(o => parseDbTimestamp(o.created_at).toDateString() === new Date().toDateString())
                 const revenue = todayOrders.reduce((sum, o) => sum + o.total, 0)
                 const cashRevenue = todayOrders.filter(o => o.payment_method === "CASH").reduce((sum, o) => sum + o.total, 0)
                 const upiRevenue = todayOrders.filter(o => o.payment_method === "UPI").reduce((sum, o) => sum + o.total, 0)
@@ -973,8 +919,8 @@ export default function Index() {
             <button
               style={{ ...viewStyles.primaryBtn, background: "#16a34a", marginTop: 8 }}
               onClick={() => {
-                const todayOrders = orders.filter(o => new Date(o.created_at).toDateString() === new Date().toDateString())
-                const rows = [["Token","Items","Total","Payment","Status","Time"], ...todayOrders.map(o => [o.token_no, o.items?.map((i:any) => `${i.name}x${i.quantity}`).join(" | ") || "", o.total, o.payment_method || "", o.status, new Date(o.created_at).toLocaleTimeString()])]
+                const todayOrders = orders.filter(o => parseDbTimestamp(o.created_at).toDateString() === new Date().toDateString())
+                const rows = [["Token","Items","Total","Payment","Status","Time"], ...todayOrders.map(o => [o.token_no, o.items?.map((i:any) => `${i.name}x${i.quantity}`).join(" | ") || "", o.total, o.payment_method || "", o.status, parseDbTimestamp(o.created_at).toLocaleTimeString()])]
                 const csv = rows.map(r => r.join(",")).join("\n")
                 const blob = new Blob([csv], { type: "text/csv" })
                 const url = URL.createObjectURL(blob)
@@ -988,7 +934,7 @@ export default function Index() {
         </div>
       )}
 
-      {view === "inventory" && <InventoryView />}
+      {view === "inventory" && <InventoryView onGoToProcurement={() => setView("procurement")} />}
 
       {view === "production" && <ProductionPage />}
 
@@ -1054,6 +1000,15 @@ export default function Index() {
         />
       </main>
 
+      {/* Incoming online/preorder orders — replaces the old "Placed" board
+          column. Mounted globally (not gated by `view`) so it interrupts
+          whatever screen staff is on the moment an order needs a decision. */}
+      <IncomingOrderModal
+        orders={placedOrders}
+        onAccept={(id, minutes) => startPreparing(id, minutes)}
+        onReject={id => rejectOrder(id)}
+      />
+
       {/* Global in-app confirm dialog */}
       <ConfirmDialog
         isOpen={confirmState.isOpen}
@@ -1067,7 +1022,7 @@ export default function Index() {
       />
       <BillModal
         order={billOrder}
-        outlet={{ id: OUTLET_ID, name: "Praang", taxRate: 5 }}
+        outlet={{ id: OUTLET_ID, name: outletBranding.name, taxRate: 5, address: outletBranding.address || undefined, phone: outletBranding.phone || undefined }}
         isOpen={showBill}
         onClose={() => { setShowBill(false); setBillOrder(null); setView("orders") }}
       />

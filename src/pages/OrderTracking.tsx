@@ -2,6 +2,7 @@ import { useParams } from "react-router-dom"
 import { useEffect, useState, useCallback, useRef } from "react"
 import { supabase } from "@/lib/supabase"
 import { requestFCMPermission } from "@/hooks/useFCM"
+import { parseDbTimestamp } from "@/lib/utils"
 
 type OrderItem = { name: string; quantity: number; price: number }
 type Order = {
@@ -238,7 +239,7 @@ export default function OrderTracking() {
         </p>
         {order.created_at && (
           <p style={{ fontSize: 12, color: "#9ca3af", margin: "6px 0 0" }}>
-            📅 {new Date(order.created_at).toLocaleString("en-IN", { day:"numeric", month:"short", year:"numeric", hour:"2-digit", minute:"2-digit", hour12:true })}
+            📅 {parseDbTimestamp(order.created_at).toLocaleString("en-IN", { day:"numeric", month:"short", year:"numeric", hour:"2-digit", minute:"2-digit", hour12:true })}
           </p>
         )}
       </div>
@@ -250,7 +251,7 @@ export default function OrderTracking() {
         <p style={{ color: "#374151", margin: 0, fontSize: 15, lineHeight: 1.5 }}>{config.message}</p>
         {order.status === "PREPARING" && order.ready_at && (
           <p style={{ marginTop: 12, fontSize: 14, color: "#374151" }}>
-            ⏱ Estimated ready at <strong>{new Date(order.ready_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</strong>
+            ⏱ Estimated ready at <strong>{parseDbTimestamp(order.ready_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</strong>
           </p>
         )}
       </div>

@@ -14,6 +14,9 @@ export const useMenu = () => {
   const [newItemPrice, setNewItemPrice] = useState("")
   const [newItemCategory, setNewItemCategory] = useState("")
   const [newItemIsVeg, setNewItemIsVeg] = useState(true)
+  // false = price typed above is exclusive of GST (existing behavior, added
+  // on top at cart time). true = the typed price already includes GST.
+  const [newItemTaxIncluded, setNewItemTaxIncluded] = useState(false)
   const [newCategoryName, setNewCategoryName] = useState("")
 
   // ── UI state ─────────────────────────────────────────────────────
@@ -95,6 +98,7 @@ export const useMenu = () => {
         category_id: newItemCategory,
         available: true,
         is_veg: newItemIsVeg,
+        price_includes_tax: newItemTaxIncluded,
       })
       .select()
       .single()
@@ -104,6 +108,7 @@ export const useMenu = () => {
       setNewItemName("")
       setNewItemPrice("")
       setNewItemCategory("")
+      setNewItemTaxIncluded(false)
     } else {
       console.error("Add item error:", error)
       alert("Could not add item: " + error?.message)
@@ -245,6 +250,7 @@ export const useMenu = () => {
     newItemPrice, setNewItemPrice,
     newItemCategory, setNewItemCategory,
     newItemIsVeg, setNewItemIsVeg,
+    newItemTaxIncluded, setNewItemTaxIncluded,
     newCategoryName, setNewCategoryName,
 
     // UI state

@@ -353,7 +353,7 @@ export default function SubRecipesView() {
           ) : (
             subRecipes.map(sr => (
               <div key={sr.id} onClick={() => setSelected(sr)}
-                style={{ ...s.listItem, background: selected?.id === sr.id ? "#111" : "white", color: selected?.id === sr.id ? "white" : "#111" }}>
+                style={{ ...s.listItem, background: selected?.id === sr.id ? "hsl(var(--primary))" : "white", color: selected?.id === sr.id ? "white" : "#111" }}>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontWeight: 700, fontSize: 14 }}>{sr.name}</div>
                   <div style={{ fontSize: 12, opacity: 0.6, marginTop: 2 }}>
@@ -615,7 +615,7 @@ export default function SubRecipesView() {
                   </div>
                 </div>
                 <div style={s.btnRow}>
-                  <button style={{ ...s.primaryBtn, opacity: sopSaving ? 0.7 : 1, background: sopSaved ? "#16a34a" : "#111" }}
+                  <button style={{ ...s.primaryBtn, opacity: sopSaving ? 0.7 : 1, background: sopSaved ? "#16a34a" : "hsl(var(--primary))" }}
                     onClick={handleSaveSop} disabled={sopSaving}>
                     {sopSaving ? "Saving…" : sopSaved ? "✓ Saved!" : "Save SOP Notes"}
                   </button>
@@ -639,7 +639,7 @@ const s: Record<string, React.CSSProperties> = {
   split: { display: "grid", gridTemplateColumns: "260px 1fr", gap: 16, alignItems: "start" },
   leftPanel: { background: "white", border: "1px solid #e5e7eb", borderRadius: 12, overflow: "hidden" },
   panelHead: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 14px", background: "#f9fafb", borderBottom: "1px solid #f3f4f6" },
-  badge2: { background: "#111", color: "white", borderRadius: 20, padding: "2px 8px", fontSize: 12, fontWeight: 700 },
+  badge2: { background: "hsl(var(--primary))", color: "white", borderRadius: 20, padding: "2px 8px", fontSize: 12, fontWeight: 700 },
   listItem: { display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", borderBottom: "1px solid #f3f4f6", cursor: "pointer" },
   iconBtn: { width: 30, height: 30, border: "none", borderRadius: 6, cursor: "pointer", fontSize: 13, flexShrink: 0 },
   rightPanel: { background: "white", border: "1px solid #e5e7eb", borderRadius: 12, overflow: "hidden" },
@@ -657,7 +657,7 @@ const s: Record<string, React.CSSProperties> = {
   textarea: { padding: "10px 12px", border: "1px solid #d1d5db", borderRadius: 8, fontSize: 13, color: "#111", background: "#fafafa", outline: "none", width: "100%", boxSizing: "border-box", fontFamily: "system-ui", resize: "vertical" as const },
   previewStrip: { background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, padding: "8px 14px", fontSize: 13, color: "#374151", marginTop: 6 },
   btnRow: { display: "flex", justifyContent: "flex-end", marginTop: 12 },
-  primaryBtn: { height: 44, padding: "0 20px", background: "#111", color: "white", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: "pointer" },
+  primaryBtn: { height: 44, padding: "0 20px", background: "hsl(var(--primary))", color: "white", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: "pointer" },
   table: { width: "100%", borderCollapse: "collapse", fontSize: 13 },
   th: { padding: "10px 12px", background: "#f3f4f6", textAlign: "left", fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.5px", whiteSpace: "nowrap" },
   td: { padding: "10px 12px", borderBottom: "1px solid #f3f4f6", color: "#111", whiteSpace: "nowrap" },

@@ -6,8 +6,23 @@ export const useCart = () => {
   const [paymentMethod, setPaymentMethod] = useState<"CASH" | "CARD" | "UPI">("CASH")
 
   // ── Totals ──────────────────────────────────────────────────────
-  const subtotal = cart.reduce((sum, i) => sum + i.price * i.quantity, 0)
-  const gst = subtotal * 0.05
+  // Mixed tax-inclusive/exclusive cart: each line's `price` may already
+  // include GST (price_includes_tax, copied from the menu item at
+  // add-to-cart time) or may not (the old, still-default behavior). A flat
+  // `subtotal * 0.05` can't handle a mix, so GST is computed per line and
+  // summed. GST rate is a flat 5% everywhere in this codebase, not
+  // per-item or configurable.
+  const GST_RATE = 0.05
+  const lineBreakdown = cart.map(i => {
+    const lineTotal = i.price * i.quantity
+    if (i.price_includes_tax) {
+      const base = lineTotal / (1 + GST_RATE)
+      return { base, tax: lineTotal - base }
+    }
+    return { base: lineTotal, tax: lineTotal * GST_RATE }
+  })
+  const subtotal = lineBreakdown.reduce((sum, l) => sum + l.base, 0)
+  const gst = lineBreakdown.reduce((sum, l) => sum + l.tax, 0)
   const grandTotal = subtotal + gst
 
   // ── Add to cart (exact copy of existing logic) ───────────────────
@@ -49,6 +64,7 @@ export const useCart = () => {
           size: size || null,
           addons: sortedAddons,
           station: item.station || "GENERAL",
+          price_includes_tax: item.price_includes_tax ?? false,
         },
       ]
     })

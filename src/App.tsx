@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom"
 import { ProtectedRoute } from "@/components/ProtectedRoute"
 import Index from "./pages/Index"
 import Login from "./pages/Login"
+import StaffActivate from "./pages/StaffActivate"
 import OrderTracking from "@/pages/OrderTracking"
 import PrintKOT from "./pages/PrintKOT"
 import PrintBill from "./pages/PrintBill"
@@ -17,6 +18,7 @@ const App = () => {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/staff-activate" element={<StaffActivate />} />
         <Route path="/order/:id" element={<OrderTracking />} />
         <Route path="/print/kot" element={<PrintKOT />} />
         <Route path="/print/bill" element={<PrintBill />} />

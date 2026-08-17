@@ -36,7 +36,7 @@ export const placeOrder = async ({
   paymentMethod: "CASH" | "CARD" | "UPI"
   orders: Order[]
   tableId?: string | null
-  orderType?: "DINE_IN" | "TAKEAWAY"
+  orderType?: "DINE_IN" | "TAKEAWAY" | "ON_THE_GO"
   orderNotes?: string
   splitItemsByStation: (items: OrderItem[]) => Record<string, OrderItem[]>
   expandRecipe: (recipeId: string) => Promise<any[]>

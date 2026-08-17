@@ -29,7 +29,7 @@ const getOutletId = (): string => {
 export const usePOSConfig = (initialMode: POSMode = "SELF_SERVICE") => {
   const [mode, setMode] = useState<POSMode>(initialMode)
   const [selectedTable, setSelectedTable] = useState<string | null>(null)
-  const [orderType, setOrderType] = useState<"DINE_IN" | "TAKEAWAY">("DINE_IN")
+  const [orderType, setOrderType] = useState<"DINE_IN" | "TAKEAWAY" | "ON_THE_GO">("DINE_IN")
   const [orderNotes, setOrderNotes] = useState("")
 
   // ── Tables from Supabase, fallback to defaults ───────────────────

@@ -191,7 +191,8 @@ export default function TastePaletteQuestionnaire() {
   const [step, setStep] = useState(0)
   const [answers, setAnswers] = useState<TasteProfileDraft>({})
   const [loadingProfile, setLoadingProfile] = useState(false)
-  const [done, setDone] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   // Resume an existing profile if this phone already has one.
   useEffect(() => {
@@ -251,8 +252,19 @@ export default function TastePaletteQuestionnaire() {
   }
 
   const finish = async (markCompleted: boolean) => {
-    if (uid) await saveTasteProfile(uid, answers, markCompleted)
-    setDone(true)
+    if (!uid) {
+      setSaveError("You're not signed in — please verify your phone number again.")
+      return
+    }
+    setSaving(true)
+    setSaveError(null)
+    const { error } = await saveTasteProfile(uid, answers, markCompleted)
+    setSaving(false)
+    if (error) {
+      setSaveError(error)
+      return
+    }
+    navigate("/taste-palette/results")
   }
 
   const goNext = () => {
@@ -321,21 +333,6 @@ export default function TastePaletteQuestionnaire() {
     return <div style={s.page}><p>Loading...</p></div>
   }
 
-  if (done) {
-    return (
-      <div style={s.page}>
-        <div style={s.card}>
-          <div style={s.doneWrap}>
-            <p style={{ fontSize: 40, margin: "0 0 8px" }}>✅</p>
-            <h1 style={s.title}>You're all set</h1>
-            <p style={s.subtitle}>We'll use this to point you to dishes you'll like. You can update it anytime.</p>
-            <button style={s.nextBtn} onClick={() => navigate("/taste-palette/results")}>See my matches</button>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div style={s.page}>
       <div style={s.card}>
@@ -380,11 +377,19 @@ export default function TastePaletteQuestionnaire() {
           )
         })}
 
+        {saveError && (
+          <p style={{ color: "#dc2626", fontSize: 13, margin: "0 0 10px", textAlign: "center" }}>
+            {saveError}
+          </p>
+        )}
+
         <div style={s.footer}>
-          <button style={s.skipBtn} onClick={() => finish(false)}>Skip for now</button>
+          <button style={s.skipBtn} onClick={() => finish(false)} disabled={saving}>Skip for now</button>
           <div style={s.navBtns}>
-            {step > 0 && <button style={s.backBtn} onClick={() => setStep(s => s - 1)}>Back</button>}
-            <button style={s.nextBtn} onClick={goNext}>{isLast ? "Finish" : "Next"}</button>
+            {step > 0 && <button style={s.backBtn} onClick={() => setStep(s => s - 1)} disabled={saving}>Back</button>}
+            <button style={s.nextBtn} onClick={goNext} disabled={saving}>
+              {saving ? "Saving…" : isLast ? "Finish" : "Next"}
+            </button>
           </div>
         </div>
       </div>

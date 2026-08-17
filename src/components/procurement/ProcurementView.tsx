@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useCallback } from "react"
 import { supabase } from "@/lib/supabase"
 import PurchaseSheetTab from "./PurchaseSheetTab"
+import { PROCUREMENT_CATEGORIES, categoryColor } from "@/lib/procurementCategories"
+import { parseDbTimestamp } from "@/lib/utils"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Ingredient    = { id: string; name: string; unit: string }
-type Vendor        = { id: string; name: string; phone: string }
+type Ingredient    = { id: string; name: string; unit: string; category: string | null }
+type Vendor        = { id: string; name: string; phone: string; category: string | null }
 type ProcurementRequest = {
   id: string; status: string; created_at: string; note: string
   vendor_id: string | null; vendors?: Vendor
@@ -49,7 +51,7 @@ const s: Record<string, React.CSSProperties> = {
   th:       { textAlign: "left" as const, padding: "8px 12px", fontSize: 12, fontWeight: 600, color: "#6b7280", borderBottom: "1px solid #e5e7eb" },
   td:       { padding: "8px 12px", fontSize: 13, borderBottom: "1px solid #f3f4f6", color: "#111" },
   input:    { padding: "6px 10px", border: "1.5px solid #e5e7eb", borderRadius: 6, fontSize: 13, outline: "none", boxSizing: "border-box" as const },
-  btn:      { padding: "8px 16px", background: "#111", color: "white", border: "none", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer" },
+  btn:      { padding: "8px 16px", background: "hsl(var(--primary))", color: "white", border: "none", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer" },
   btnSm:    { padding: "4px 10px", border: "none", borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: "pointer" },
   badge:    { padding: "2px 8px", borderRadius: 20, fontSize: 11, fontWeight: 600 },
   overlay:  { position: "fixed" as const, inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200 },
@@ -86,6 +88,7 @@ export default function ProcurementView() {
   // Vendor form
   const [vName, setVName] = useState("")
   const [vPhone, setVPhone] = useState("")
+  const [vCategory, setVCategory] = useState("")
 
   // Receive tab state
   const [receiveReqs, setReceiveReqs]     = useState<ReceiveRequest[]>([])
@@ -104,7 +107,7 @@ export default function ProcurementView() {
         .order("created_at", { ascending: false })
         .limit(50),
       supabase.from("vendors").select("*").order("name"),
-      supabase.from("ingredients").select("id, name, unit").order("name"),
+      supabase.from("ingredients").select("id, name, unit, category").order("name"),
     ])
     if (r) setRequests(r as any)
     if (v) setVendors(v)
@@ -129,6 +132,27 @@ export default function ProcurementView() {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  // Pick up items queued by IngredientsPage's Reorder Alerts tab
+  // ("Approve Selected → Create Procurement Order"). localStorage, not
+  // React state/props, because Index.tsx unmounts this whole component
+  // when the main view isn't "procurement" — any in-memory handoff
+  // would be lost by the time the user actually lands here.
+  useEffect(() => {
+    const raw = localStorage.getItem("praang_pending_procurement_items")
+    if (!raw) return
+    localStorage.removeItem("praang_pending_procurement_items")
+    try {
+      const items = JSON.parse(raw) as { ingredient_id: string; qty: number }[]
+      if (Array.isArray(items) && items.length > 0) {
+        setRows(items.map(i => ({ ingredient_id: i.ingredient_id, qty: String(i.qty) })))
+        setReqNote("Reorder — from low stock alert")
+        setTab("new")
+      }
+    } catch (e) {
+      console.error("Failed to parse queued procurement items:", e)
+    }
+  }, [])
   useEffect(() => { if (tab === "receive") loadReceive() }, [tab, loadReceive])
 
   // ── Existing tab helpers ────────────────────────────────────────────────────
@@ -141,18 +165,76 @@ export default function ProcurementView() {
     if (data) setReqItems(data as any)
   }
 
+  // Vendor's category, if any — drives ingredient-picker filtering below.
+  const selectedVendor = vendors.find(v => v.id === reqVendor) || null
+  const vendorCategory = selectedVendor?.category ?? null
+  const ingredientOptions = vendorCategory
+    ? ingredients.filter(i => i.category === vendorCategory)
+    : ingredients
+
+  const onSelectReqVendor = (vendorId: string) => {
+    setReqVendor(vendorId)
+    const v = vendors.find(x => x.id === vendorId)
+    const cat = v?.category ?? null
+    if (!cat) return
+    // Vendor has a category — drop any already-picked ingredient that
+    // doesn't belong to it rather than silently leaving a mismatched
+    // row that the (now-filtered) dropdown wouldn't even offer anymore.
+    setRows(prev => prev.map(r => {
+      if (!r.ingredient_id) return r
+      const ing = ingredients.find(i => i.id === r.ingredient_id)
+      return ing && ing.category !== cat ? { ...r, ingredient_id: "" } : r
+    }))
+  }
+
   const createRequest = async () => {
     const valid = rows.filter(r => r.ingredient_id && r.qty)
     if (!valid.length) { alert("Add at least one ingredient"); return }
     setLoadingMain(true)
-    const { data: req } = await supabase
-      .from("procurement_requests")
-      .insert({ status: "draft", note: reqNote, vendor_id: reqVendor || null })
-      .select().single()
-    if (!req) { setLoadingMain(false); return }
-    await supabase.from("procurement_items").insert(
-      valid.map(r => ({ request_id: req.id, ingredient_id: r.ingredient_id, requested_qty: Number(r.qty) }))
-    )
+
+    if (reqVendor) {
+      // Vendor explicitly picked — one request, as before. The picker was
+      // already restricted to the vendor's category (if it has one), so
+      // there's nothing to segregate.
+      const { data: req } = await supabase
+        .from("procurement_requests")
+        .insert({ status: "draft", note: reqNote, vendor_id: reqVendor })
+        .select().single()
+      if (req) {
+        await supabase.from("procurement_items").insert(
+          valid.map(r => ({ request_id: req.id, ingredient_id: r.ingredient_id, requested_qty: Number(r.qty) }))
+        )
+      }
+    } else {
+      // No vendor picked — items were added freely from the full
+      // ingredient list, so split into one draft request per category
+      // (uncategorized items land together under "Uncategorized").
+      // Each draft lands with vendor_id null; staff assign a vendor per
+      // group afterward from the Requests tab.
+      const groups = new Map<string, typeof valid>()
+      for (const r of valid) {
+        const ing = ingredients.find(i => i.id === r.ingredient_id)
+        const cat = ing?.category || "Uncategorized"
+        const list = groups.get(cat) || []
+        list.push(r)
+        groups.set(cat, list)
+      }
+      for (const [cat, groupRows] of groups) {
+        const note = groups.size > 1
+          ? (reqNote ? `${reqNote} — ${cat}` : `${cat} items`)
+          : reqNote
+        const { data: req } = await supabase
+          .from("procurement_requests")
+          .insert({ status: "draft", note, vendor_id: null })
+          .select().single()
+        if (req) {
+          await supabase.from("procurement_items").insert(
+            groupRows.map(r => ({ request_id: req.id, ingredient_id: r.ingredient_id, requested_qty: Number(r.qty) }))
+          )
+        }
+      }
+    }
+
     setRows([{ ingredient_id: "", qty: "" }])
     setReqNote(""); setReqVendor("")
     setLoadingMain(false); setTab("requests"); load()
@@ -191,8 +273,8 @@ export default function ProcurementView() {
 
   const addVendor = async () => {
     if (!vName.trim()) return
-    await supabase.from("vendors").insert({ name: vName, phone: vPhone })
-    setVName(""); setVPhone(""); load()
+    await supabase.from("vendors").insert({ name: vName, phone: vPhone, category: vCategory || null })
+    setVName(""); setVPhone(""); setVCategory(""); load()
   }
 
   // ── Receive tab helpers ─────────────────────────────────────────────────────
@@ -328,7 +410,7 @@ export default function ProcurementView() {
 
   const pendingOrders = filteredReqs
     .filter(r => !["completed", "partially_received"].includes(r.status))
-    .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+    .sort((a, b) => parseDbTimestamp(a.created_at).getTime() - parseDbTimestamp(b.created_at).getTime())
 
   const completedOrders = filteredReqs
     .filter(r => ["completed", "partially_received"].includes(r.status))
@@ -362,7 +444,7 @@ export default function ProcurementView() {
               onClick={() => { setTab(key); setSelectedReq(null) }}
               style={{
                 ...s.btnSm,
-                background: tab === key ? "#111" : "#f3f4f6",
+                background: tab === key ? "hsl(var(--primary))" : "#f3f4f6",
                 color:      tab === key ? "white" : "#374151",
                 padding:    "6px 14px",
               }}
@@ -401,7 +483,7 @@ export default function ProcurementView() {
                       <span style={{ ...s.badge, background: sc.bg, color: sc.color }}>{r.status}</span>
                     </td>
                     <td style={s.td}>{r.note || "—"}</td>
-                    <td style={s.td}>{new Date(r.created_at).toLocaleDateString("en-IN")}</td>
+                    <td style={s.td}>{parseDbTimestamp(r.created_at).toLocaleDateString("en-IN")}</td>
                     <td style={s.td}>
                       <button
                         onClick={() => loadReqItems(r)}
@@ -519,8 +601,8 @@ export default function ProcurementView() {
                 style={{
                   padding: "6px 16px", border: "1.5px solid", borderRadius: 20,
                   fontSize: 13, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap",
-                  borderColor: vendorFilter === v.id ? "#111" : "#e5e7eb",
-                  background:  vendorFilter === v.id ? "#111" : "white",
+                  borderColor: vendorFilter === v.id ? "hsl(var(--primary))" : "#e5e7eb",
+                  background:  vendorFilter === v.id ? "hsl(var(--primary))" : "white",
                   color:       vendorFilter === v.id ? "white" : "#374151",
                 }}
               >{v.name}</button>
@@ -795,10 +877,17 @@ export default function ProcurementView() {
               <label style={{ fontSize: 12, fontWeight: 600, color: "#374151", display: "block", marginBottom: 4 }}>
                 Vendor (optional)
               </label>
-              <select value={reqVendor} onChange={e => setReqVendor(e.target.value)} style={{ ...s.input, width: "100%", height: 38 }}>
-                <option value="">Select vendor</option>
-                {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+              <select value={reqVendor} onChange={e => onSelectReqVendor(e.target.value)} style={{ ...s.input, width: "100%", height: 38 }}>
+                <option value="">No vendor — add items freely</option>
+                {vendors.map(v => <option key={v.id} value={v.id}>{v.name}{v.category ? ` (${v.category})` : ""}</option>)}
               </select>
+              <p style={{ fontSize: 11, color: "#9ca3af", margin: "4px 0 0" }}>
+                {vendorCategory
+                  ? `Ingredient list below is filtered to ${vendorCategory}.`
+                  : reqVendor
+                    ? "This vendor has no category set — showing all ingredients."
+                    : "No vendor picked — on Create, items will auto-split into one draft request per category."}
+              </p>
             </div>
             <div>
               <label style={{ fontSize: 12, fontWeight: 600, color: "#374151", display: "block", marginBottom: 4 }}>
@@ -831,10 +920,15 @@ export default function ProcurementView() {
                       style={{ ...s.input, width: "100%" }}
                     >
                       <option value="">Select ingredient</option>
-                      {ingredients.map(ing => (
-                        <option key={ing.id} value={ing.id}>{ing.name} ({ing.unit})</option>
+                      {ingredientOptions.map(ing => (
+                        <option key={ing.id} value={ing.id}>
+                          {ing.name} ({ing.unit}){!vendorCategory && ing.category ? ` — ${ing.category}` : ""}
+                        </option>
                       ))}
                     </select>
+                    {ingredientOptions.length === 0 && (
+                      <span style={{ fontSize: 11, color: "#dc2626" }}>No ingredients tagged "{vendorCategory}" yet — set categories in Ingredients first.</span>
+                    )}
                   </td>
                   <td style={s.td}>
                     <input
@@ -885,23 +979,41 @@ export default function ProcurementView() {
                 onChange={e => setVPhone(e.target.value)}
                 style={{ ...s.input, width: 160 }}
               />
+              <select
+                value={vCategory}
+                onChange={e => setVCategory(e.target.value)}
+                style={{ ...s.input, width: 170 }}
+              >
+                <option value="">No category</option>
+                {PROCUREMENT_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
               <button onClick={addVendor} style={s.btn}>Add</button>
             </div>
+            <p style={{ fontSize: 12, color: "#9ca3af", marginTop: 8, marginBottom: 0 }}>
+              Setting a category filters the ingredient list to that category when this vendor is picked in New Request — leave unset if this vendor supplies a mix.
+            </p>
           </div>
           <div style={s.card}>
             <table style={s.table}>
               <thead>
-                <tr><th style={s.th}>Name</th><th style={s.th}>Phone</th></tr>
+                <tr><th style={s.th}>Name</th><th style={s.th}>Category</th><th style={s.th}>Phone</th></tr>
               </thead>
               <tbody>
                 {vendors.length === 0 && (
-                  <tr><td colSpan={2} style={{ ...s.td, textAlign: "center", color: "#9ca3af", padding: "20px" }}>
+                  <tr><td colSpan={3} style={{ ...s.td, textAlign: "center", color: "#9ca3af", padding: "20px" }}>
                     No vendors yet
                   </td></tr>
                 )}
                 {vendors.map(v => (
                   <tr key={v.id}>
                     <td style={s.td}>{v.name}</td>
+                    <td style={s.td}>
+                      {v.category ? (
+                        <span style={{ ...s.badge, background: categoryColor(v.category).bg, color: categoryColor(v.category).color }}>
+                          {v.category}
+                        </span>
+                      ) : <span style={{ color: "#9ca3af", fontSize: 12 }}>Any / mixed</span>}
+                    </td>
                     <td style={s.td}>{v.phone || "—"}</td>
                   </tr>
                 ))}

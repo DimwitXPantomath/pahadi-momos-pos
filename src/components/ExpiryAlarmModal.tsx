@@ -245,7 +245,7 @@ const s: Record<string, React.CSSProperties> = {
     whiteSpace: "nowrap",
   },
   checkBtn: {
-    background: "#111",
+    background: "hsl(var(--primary))",
     color: "white",
     border: "none",
     borderRadius: 6,
@@ -287,7 +287,7 @@ const s: Record<string, React.CSSProperties> = {
   primaryBtn: {
     height: 40,
     padding: "0 20px",
-    background: "#111",
+    background: "hsl(var(--primary))",
     color: "white",
     border: "none",
     borderRadius: 8,

@@ -1,6 +1,8 @@
 import { useState } from "react"
 import { useNavigate } from "react-router-dom"
+import { Eye, EyeOff } from "lucide-react"
 import { supabase } from "@/lib/supabase"
+import { cn } from "@/lib/utils"
 
 type Mode = "signin" | "signup"
 
@@ -9,6 +11,8 @@ export default function Login() {
   const [name, setName] = useState("")
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
+  const [confirmPassword, setConfirmPassword] = useState("")
+  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState("")
   const [success, setSuccess] = useState("")
   const [isLoading, setIsLoading] = useState(false)
@@ -21,13 +25,21 @@ export default function Login() {
     setIsLoading(true)
 
     if (mode === "signin") {
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      })
+      let result
+      try {
+        result = await supabase.auth.signInWithPassword({ email, password })
+      } catch (err: any) {
+        setError(err?.message === "Failed to fetch"
+          ? "Couldn't reach the server. Check your internet connection and that your Supabase project isn't paused."
+          : (err?.message || "Something went wrong. Please try again."))
+        setIsLoading(false)
+        return
+      }
 
-      if (error) {
-        setError("Invalid email or password. Please try again.")
+      if (result.error) {
+        setError(result.error.message === "Failed to fetch"
+          ? "Couldn't reach the server. Check your internet connection and that your Supabase project isn't paused."
+          : "Invalid email or password. Please try again.")
         setIsLoading(false)
         return
       }
@@ -48,23 +60,51 @@ export default function Login() {
         return
       }
 
-      const { error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: { name }
-        }
-      })
-
-      if (error) {
-        setError(error.message)
+      if (password !== confirmPassword) {
+        setError("Passwords don't match.")
         setIsLoading(false)
         return
       }
 
-      setSuccess("Account created! You can now sign in.")
+      let result
+      try {
+        result = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: { name }
+          }
+        })
+      } catch (err: any) {
+        setError(err?.message === "Failed to fetch"
+          ? "Couldn't reach the server. Check your internet connection and that your Supabase project isn't paused."
+          : (err?.message || "Something went wrong. Please try again."))
+        setIsLoading(false)
+        return
+      }
+
+      if (result.error) {
+        const msg = result.error.message || ""
+        setError(
+          msg === "Failed to fetch"
+            ? "Couldn't reach the server. Check your internet connection and that your Supabase project isn't paused."
+            : msg.toLowerCase().includes("not been invited") || msg.toLowerCase().includes("database error")
+            ? "This email hasn't been invited. Ask your admin to invite you first, then try again."
+            : msg
+        )
+        setIsLoading(false)
+        return
+      }
+
+      // Signup is invite-only as of 028_invite_only_signup.sql — if this
+      // succeeded, the email was invited. Whether they can sign in right
+      // away depends on the "Confirm email" setting in the Supabase
+      // dashboard: if it's on, they need to click the link in the
+      // confirmation email first; if it's off, they can sign in now.
+      setSuccess("Account created! Check your email to confirm it, then sign in.")
       setMode("signin")
       setPassword("")
+      setConfirmPassword("")
       setIsLoading(false)
     }
   }
@@ -76,92 +116,113 @@ export default function Login() {
   }
 
   return (
-    <div style={styles.page}>
-      <div style={styles.card}>
+    <div className="min-h-screen flex items-center justify-center bg-background font-sans p-4">
+      <div className="bg-white rounded-[20px] px-8 py-10 w-full max-w-[400px] pos-shadow-lg">
 
         {/* Logo */}
-        <div style={styles.logoArea}>
-          <div style={{ fontSize: 44, marginBottom: 8 }}>🌿</div>
-          <h1 style={styles.logoText}>Praang</h1>
-          <p style={styles.tagline}>Every outlet, one courtyard</p>
+        <div className="text-center mb-7">
+          <div className="text-[44px] mb-2">🌿</div>
+          <h1 className="text-[34px] font-extrabold m-0 tracking-tight text-foreground">Praang</h1>
+          <p className="text-gray-500 mt-1.5 mb-0 text-[13px]">Every outlet, one courtyard</p>
         </div>
 
         {/* Mode toggle */}
-        <div style={styles.modeToggle}>
+        <div className="flex bg-muted rounded-lg p-1 mb-6 gap-1">
           <button
             onClick={() => { setMode("signin"); setError(""); setSuccess("") }}
-            style={{
-              ...styles.modeBtn,
-              background: mode === "signin" ? "#111" : "transparent",
-              color: mode === "signin" ? "white" : "#6b7280",
-            }}
+            className={cn(
+              "flex-1 py-2 border-none rounded-md text-sm font-semibold cursor-pointer transition-colors",
+              mode === "signin" ? "bg-primary text-primary-foreground" : "bg-transparent text-gray-500"
+            )}
           >
             Sign in
           </button>
           <button
             onClick={() => { setMode("signup"); setError(""); setSuccess("") }}
-            style={{
-              ...styles.modeBtn,
-              background: mode === "signup" ? "#111" : "transparent",
-              color: mode === "signup" ? "white" : "#6b7280",
-            }}
+            className={cn(
+              "flex-1 py-2 border-none rounded-md text-sm font-semibold cursor-pointer transition-colors",
+              mode === "signup" ? "bg-primary text-primary-foreground" : "bg-transparent text-gray-500"
+            )}
           >
             Sign up
           </button>
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} style={styles.form}>
+        <form onSubmit={handleSubmit} className="flex flex-col gap-[18px]">
 
           {mode === "signup" && (
-            <div style={styles.field}>
-              <label style={styles.label}>Your name</label>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[13px] font-semibold text-gray-700">Your name</label>
               <input
                 type="text"
                 value={name}
                 onChange={e => setName(e.target.value)}
                 placeholder="e.g. Rahul Sharma"
                 required
-                style={styles.input}
+                className="px-3.5 py-3 border-[1.5px] border-border rounded-lg text-[15px] outline-none text-foreground bg-white focus:ring-2 focus:ring-ring focus:border-primary"
               />
             </div>
           )}
 
-          <div style={styles.field}>
-            <label style={styles.label}>Email</label>
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[13px] font-semibold text-gray-700">Email</label>
             <input
               type="email"
               value={email}
               onChange={e => setEmail(e.target.value)}
               placeholder="you@example.com"
               required
-              style={styles.input}
+              className="px-3.5 py-3 border-[1.5px] border-border rounded-lg text-[15px] outline-none text-foreground bg-white focus:ring-2 focus:ring-ring focus:border-primary"
             />
           </div>
 
-          <div style={styles.field}>
-            <label style={styles.label}>Password</label>
-            <input
-              type="password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              placeholder="••••••••"
-              required
-              style={styles.input}
-            />
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[13px] font-semibold text-gray-700">Password</label>
+            <div className="relative">
+              <input
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                placeholder="••••••••"
+                required
+                className="w-full box-border px-3.5 py-3 pr-10 border-[1.5px] border-border rounded-lg text-[15px] outline-none text-foreground bg-white focus:ring-2 focus:ring-ring focus:border-primary"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(v => !v)}
+                aria-label={showPassword ? "Hide password" : "Show password"}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 bg-transparent border-none cursor-pointer p-0 flex items-center"
+              >
+                {showPassword ? <EyeOff className="w-[18px] h-[18px]" /> : <Eye className="w-[18px] h-[18px]" />}
+              </button>
+            </div>
           </div>
 
-          {error && <div style={styles.error}>{error}</div>}
-          {success && <div style={styles.successMsg}>{success}</div>}
+          {mode === "signup" && (
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[13px] font-semibold text-gray-700">Re-enter password</label>
+              <input
+                type="password"
+                value={confirmPassword}
+                onChange={e => setConfirmPassword(e.target.value)}
+                placeholder="••••••••"
+                required
+                className="px-3.5 py-3 border-[1.5px] border-border rounded-lg text-[15px] outline-none text-foreground bg-white focus:ring-2 focus:ring-ring focus:border-primary"
+              />
+            </div>
+          )}
+
+          {error && <div className="bg-destructive/10 border border-destructive/20 text-destructive px-3.5 py-2.5 rounded-lg text-[13px]">{error}</div>}
+          {success && <div className="bg-green-50 border border-green-200 text-green-600 px-3.5 py-2.5 rounded-lg text-[13px]">{success}</div>}
 
           <button
             type="submit"
             disabled={isLoading}
-            style={{
-              ...styles.button,
-              opacity: isLoading ? 0.7 : 1,
-              cursor: isLoading ? "not-allowed" : "pointer",
-            }}
+            className={cn(
+              "bg-primary text-primary-foreground border-none rounded-lg py-3.5 text-[15px] font-bold mt-1 transition-opacity",
+              isLoading ? "opacity-70 cursor-not-allowed" : "cursor-pointer"
+            )}
           >
             {isLoading
               ? (mode === "signin" ? "Signing in..." : "Creating account...")
@@ -171,146 +232,18 @@ export default function Login() {
 
         </form>
 
-        <p style={styles.switchText}>
+        <p className="text-center text-[13px] text-gray-500 mt-5 mb-0">
           {mode === "signin" ? "New to Praang? " : "Already have an account? "}
-          <button onClick={toggleMode} style={styles.switchBtn}>
+          <button onClick={toggleMode} className="bg-transparent border-none text-foreground font-bold cursor-pointer text-[13px] underline">
             {mode === "signin" ? "Create account" : "Sign in"}
           </button>
         </p>
 
-        <p style={styles.footer}>
+        <p className="text-center text-gray-400 text-[11px] mt-5 mb-0">
           Praang POS · Built for Indian food outlets
         </p>
 
       </div>
     </div>
   )
-}
-
-const styles: Record<string, React.CSSProperties> = {
-  page: {
-    minHeight: "100vh",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    background: "#f5f5f0",
-    fontFamily: "system-ui, sans-serif",
-    padding: 16,
-  },
-  card: {
-    background: "white",
-    borderRadius: 20,
-    padding: "40px 32px",
-    width: "100%",
-    maxWidth: 400,
-    boxShadow: "0 2px 24px rgba(0,0,0,0.08)",
-  },
-  logoArea: {
-    textAlign: "center",
-    marginBottom: 28,
-  },
-  logoText: {
-    fontSize: 34,
-    fontWeight: 800,
-    margin: 0,
-    letterSpacing: "-1px",
-    color: "#111",
-  },
-  tagline: {
-    color: "#6b7280",
-    margin: "6px 0 0",
-    fontSize: 13,
-  },
-  modeToggle: {
-    display: "flex",
-    background: "#f3f4f6",
-    borderRadius: 10,
-    padding: 4,
-    marginBottom: 24,
-    gap: 4,
-  },
-  modeBtn: {
-    flex: 1,
-    padding: "8px 0",
-    border: "none",
-    borderRadius: 8,
-    fontSize: 14,
-    fontWeight: 600,
-    cursor: "pointer",
-    transition: "all 0.2s",
-  },
-  form: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 18,
-  },
-  field: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 6,
-  },
-  label: {
-    fontSize: 13,
-    fontWeight: 600,
-    color: "#374151",
-  },
-  input: {
-    padding: "12px 14px",
-    border: "1.5px solid #e5e7eb",
-    borderRadius: 10,
-    fontSize: 15,
-    outline: "none",
-    color: "#111",
-    background: "white",
-  },
-  error: {
-    background: "#fef2f2",
-    border: "1px solid #fecaca",
-    color: "#dc2626",
-    padding: "10px 14px",
-    borderRadius: 8,
-    fontSize: 13,
-  },
-  successMsg: {
-    background: "#f0fdf4",
-    border: "1px solid #bbf7d0",
-    color: "#16a34a",
-    padding: "10px 14px",
-    borderRadius: 8,
-    fontSize: 13,
-  },
-  button: {
-    background: "#111",
-    color: "white",
-    border: "none",
-    borderRadius: 10,
-    padding: "14px",
-    fontSize: 15,
-    fontWeight: 700,
-    marginTop: 4,
-    transition: "opacity 0.2s",
-  },
-  switchText: {
-    textAlign: "center",
-    fontSize: 13,
-    color: "#6b7280",
-    marginTop: 20,
-    marginBottom: 0,
-  },
-  switchBtn: {
-    background: "none",
-    border: "none",
-    color: "#111",
-    fontWeight: 700,
-    cursor: "pointer",
-    fontSize: 13,
-    textDecoration: "underline",
-  },
-  footer: {
-    textAlign: "center",
-    color: "#9ca3af",
-    fontSize: 11,
-    marginTop: 20,
-    marginBottom: 0,
-  },
 }

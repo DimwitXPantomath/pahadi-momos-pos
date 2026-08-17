@@ -97,6 +97,7 @@ function DishCard({ item, badge, muted }: { item: MenuItem; badge: string | null
         <p style={{ fontWeight: 700, fontSize: 14, margin: 0, color: COLORS.text }}>{item.name}</p>
         <p style={{ fontSize: 12, color: COLORS.muted, margin: "2px 0 0" }}>
           ₹{item.price}
+          {item.estimated_calories != null && ` · ~${item.estimated_calories} kcal`}
           {item.spice_level != null && ` · ${"🌶️".repeat(item.spice_level)}`}
           {item.cuisine_category && ` · ${item.cuisine_category}`}
         </p>

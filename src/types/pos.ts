@@ -17,6 +17,10 @@ export type MenuItem = {
   category_id: string
   available: boolean
   is_veg: boolean
+  // If true, `price` already has GST baked in (breakdown backs the tax out
+  // of it). If false (default — matches all pre-existing rows), `price` is
+  // exclusive and GST gets added on top, as it always has.
+  price_includes_tax?: boolean
   created_at?: string
   sizes?: MenuSize[]
   addons?: MenuAddon[]
@@ -49,6 +53,14 @@ export type OrderItem = {
   size?: { label: string; price: number } | null
   addons?: { name: string; price: number }[]
   station?: string
+  // Per-item kitchen instruction (e.g. "no onion") — typed in CartPanel's
+  // per-item note field, merged in at placeOrder() time, printed on the KOT.
+  notes?: string
+  // Copied from MenuItem at add-to-cart time (see useCart.addToCart) so the
+  // per-line GST math in useCart's subtotal/gst calc knows whether `price`
+  // already includes tax. Not stored per-line in the DB — items are stored
+  // as a JSON snapshot on the order row, so this rides along automatically.
+  price_includes_tax?: boolean
 }
 
 // CartItem mirrors OrderItem — used before order is placed
@@ -61,6 +73,7 @@ export enum OrderStatus {
   PREPARING = "PREPARING",
   READY = "READY",
   COLLECTED = "COLLECTED",
+  CANCELLED = "CANCELLED",
 }
 
 export type Order = {
@@ -70,6 +83,12 @@ export type Order = {
   order_no: number
   token_no: number
   outlet_id?: string
+  // FY-scoped invoice number — never resets except at the financial-year
+  // boundary (Apr 1, India). token_no above resets daily instead — that's
+  // the "KOT number". See supabase/migrations for assign_order_numbers().
+  bill_no?: number | null
+  bill_fy?: string | null
+  order_type?: "DINE_IN" | "TAKEAWAY" | "ON_THE_GO" | null
 
   // items & totals
   items: OrderItem[]
@@ -84,16 +103,19 @@ export type Order = {
   created_at: string
   ready_at?: string | null
   closed_at?: string | null
+  cancelled_at?: string | null
 
   // payment
   payment_method?: "CASH" | "CARD" | "UPI"
 
   // online self-order (see supabase/migrations/010_online_ordering_and_loyalty_toggle.sql)
-  order_source?: "pos" | "online"
+  // 'preorder' = PRAANG Ahead scheduled orders
+  order_source?: "pos" | "online" | "preorder"
   payment_status?: "pending" | "paid"
   customer_phone?: string | null
   customer_name?: string | null
   table_id?: string | null
+  preorder_for?: string | null
 
   // optional
   tableNumber?: number | null

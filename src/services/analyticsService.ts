@@ -1,5 +1,6 @@
 import type { Order, MenuItem } from "@/types/pos"
 import { calculateItemProfit } from "./inventoryService"
+import { parseDbTimestamp } from "@/lib/utils"
 
 // ── Sales analytics ───────────────────────────────────────────────
 
@@ -7,7 +8,7 @@ export const getSalesData = (orders: Order[]) => {
   const daily: Record<string, number> = {}
 
   orders.forEach(order => {
-    const date = new Date(order.created_at).toLocaleDateString("en-IN", {
+    const date = parseDbTimestamp(order.created_at).toLocaleDateString("en-IN", {
       day: "2-digit",
       month: "short",
     })
@@ -49,7 +50,7 @@ export const getItemDemand = (orders: Order[], days = 7) => {
   const cutoff = Date.now() - days * 24 * 60 * 60 * 1000
 
   orders.forEach(order => {
-    if (new Date(order.created_at).getTime() < cutoff) return
+    if (parseDbTimestamp(order.created_at).getTime() < cutoff) return
     order.items?.forEach(item => {
       map[item.name] = (map[item.name] || 0) + item.quantity
     })

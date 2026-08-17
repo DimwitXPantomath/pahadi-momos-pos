@@ -173,17 +173,24 @@ export default function ProductionPage() {
   const fetchAll = useCallback(async () => {
     setLoading(true)
 
-    const [srRes, boRes, stockRes, ingRes, recRes] = await Promise.all([
+    const [srRes, boRes, stockRes, ingRes, recRes, invRes] = await Promise.all([
       supabase.from("sub_recipes").select("*").order("name"),
       supabase.from("sub_recipe_batch_options").select("*").order("sort_order"),
       supabase.from("sub_recipe_stock")
         .select(`id, sub_recipe_id, quantity, original_quantity, unit, produced_at, expires_at, is_spoiled, alarm_acknowledged,
           sub_recipes ( name, shelf_life_hours )`)
         .order("produced_at", { ascending: false }),
-      supabase.from("ingredients").select("id, name, usage_unit, current_stock").order("name"),
+      // NOTE: current_stock is NOT selected from ingredients here — that
+      // column is legacy (see inventoryService.ts's updateStock comment).
+      // inventory_stock.current_quantity is the real, order-placement-
+      // deducted number; ingredients.current_stock would silently drift
+      // from it the moment any order got sold. Fetched separately below
+      // and merged, same pattern as ProcurementView.tsx/purchaseSheetService.ts.
+      supabase.from("ingredients").select("id, name, usage_unit").order("name"),
       supabase.from("recipes")
         .select(`id, name, serves, output_item_id, items ( name )`)
         .order("name"),
+      supabase.from("inventory_stock").select("ingredient_id, current_quantity"),
     ])
 
     setSubRecipes((srRes.data || []) as SubRecipe[])
@@ -203,7 +210,10 @@ export default function ProductionPage() {
       alarm_acknowledged: r.alarm_acknowledged,
     }))
     setStockBatches(mapped)
-    setIngredients((ingRes.data || []) as Ingredient[])
+    const stockMap = new Map((invRes.data || []).map((s: any) => [s.ingredient_id, s.current_quantity || 0]))
+    setIngredients(((ingRes.data || []) as Omit<Ingredient, "current_stock">[]).map(i => ({
+      ...i, current_stock: stockMap.get(i.id) || 0,
+    })))
     setRecipes((recRes.data || []).map((r: any) => ({
       id: r.id,
       name: r.name,
@@ -340,9 +350,8 @@ export default function ProductionPage() {
       if (!ing) continue
       const newStock = Math.max(0, ing.current_stock - deduct)
       const { error: updErr } = await supabase
-        .from("ingredients")
-        .update({ current_stock: newStock })
-        .eq("id", item.ingredient_id)
+        .from("inventory_stock")
+        .upsert({ ingredient_id: item.ingredient_id, current_quantity: newStock, updated_at: new Date().toISOString() }, { onConflict: "ingredient_id" })
       if (updErr) { setError(updErr.message); setMakingSubSaving(false); return }
     }
 
@@ -465,9 +474,8 @@ export default function ProductionPage() {
       const ing = ingredients.find(ig => ig.id === item.ingredient_id)
       if (!ing) continue
       const { error: updErr } = await supabase
-        .from("ingredients")
-        .update({ current_stock: Math.max(0, ing.current_stock - needed) })
-        .eq("id", item.ingredient_id)
+        .from("inventory_stock")
+        .upsert({ ingredient_id: item.ingredient_id, current_quantity: Math.max(0, ing.current_stock - needed), updated_at: new Date().toISOString() }, { onConflict: "ingredient_id" })
       if (updErr) { setError(updErr.message); setProdSaving(false); return }
     }
 
@@ -625,7 +633,7 @@ export default function ProductionPage() {
             onClick={() => switchTab(t.key as Tab)}
             style={{
               ...s.tabBtn,
-              background: tab === t.key ? "#111" : "white",
+              background: tab === t.key ? "hsl(var(--primary))" : "white",
               color: tab === t.key ? "white" : "#374151",
               fontWeight: tab === t.key ? 700 : 400,
             }}
@@ -1134,7 +1142,7 @@ const s: Record<string, React.CSSProperties> = {
   previewTitle: { fontSize: 12, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.4px", marginBottom: 10 },
   previewRow: { display: "flex", alignItems: "center", padding: "6px 0", borderBottom: "1px solid #f3f4f6", flexWrap: "wrap", gap: 4 },
   btnRow: { display: "flex", justifyContent: "flex-end", marginTop: 8 },
-  primaryBtn: { height: 44, padding: "0 20px", background: "#111", color: "white", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: "pointer" },
+  primaryBtn: { height: 44, padding: "0 20px", background: "hsl(var(--primary))", color: "white", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: "pointer" },
   tableWrap: { overflowX: "auto" },
   table: { width: "100%", borderCollapse: "collapse", fontSize: 13 },
   th: { padding: "10px 12px", background: "#f3f4f6", textAlign: "left", fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.5px", whiteSpace: "nowrap" },

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react"
 import { supabase } from "@/lib/supabase"
+import { parseDbTimestamp } from "@/lib/utils"
 
 type Order = { id: string; total: number; created_at: string; items: any[]; payment_method: string }
 
@@ -63,7 +64,7 @@ export default function MISView() {
 
   // Daily sales grouped
   const dailySales = orders.reduce((acc: Record<string, { orders: number; revenue: number }>, o) => {
-    const day = new Date(o.created_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })
+    const day = parseDbTimestamp(o.created_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })
     if (!acc[day]) acc[day] = { orders: 0, revenue: 0 }
     acc[day].orders++
     acc[day].revenue += o.total || 0
@@ -351,7 +352,7 @@ export default function MISView() {
                   onClick={() => exportCSV(
                     [["Date", "Customer", "Phone", "Amount", "Status", "Order ID"],
                      ...filtered.map(cs => [
-                       new Date(cs.created_at).toLocaleDateString("en-IN"),
+                       parseDbTimestamp(cs.created_at).toLocaleDateString("en-IN"),
                        cs.customer_name || "—",
                        cs.customer_phone || "—",
                        cs.amount?.toFixed(2) || "0",
@@ -385,7 +386,7 @@ export default function MISView() {
                   )}
                   {filtered.map(cs => (
                     <tr key={cs.id}>
-                      <td style={s.td}>{new Date(cs.created_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "2-digit" })}</td>
+                      <td style={s.td}>{parseDbTimestamp(cs.created_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "2-digit" })}</td>
                       <td style={{ ...s.td, fontWeight: 600 }}>{cs.customer_name || <span style={{ color: "#9ca3af" }}>—</span>}</td>
                       <td style={s.td}>{cs.customer_phone || <span style={{ color: "#9ca3af" }}>—</span>}</td>
                       <td style={{ ...s.td, fontWeight: 700, color: cs.paid ? "#16a34a" : "#dc2626" }}>₹{(cs.amount || 0).toFixed(0)}</td>

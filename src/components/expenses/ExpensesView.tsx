@@ -183,7 +183,7 @@ export default function ExpensesView() {
             style={{
               padding: "7px 20px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600,
               background: viewTab === key ? "white" : "transparent",
-              color: viewTab === key ? "#111" : "#6b7280",
+              color: viewTab === key ? "hsl(var(--primary))" : "#6b7280",
               boxShadow: viewTab === key ? "0 1px 4px rgba(0,0,0,0.08)" : "none",
             }}
           >{label}</button>
@@ -351,7 +351,7 @@ export default function ExpensesView() {
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
             <button
               onClick={() => setFilterCat("all")}
-              style={{ ...s.filterBtn, background: filterCat === "all" ? "#111" : "#f3f4f6", color: filterCat === "all" ? "white" : "#374151" }}
+              style={{ ...s.filterBtn, background: filterCat === "all" ? "hsl(var(--primary))" : "#f3f4f6", color: filterCat === "all" ? "white" : "#374151" }}
             >All ({expenses.length})</button>
             {byCategory.map(([cat, amt]) => {
               const catInfo = CATEGORIES.find(c => c.value === cat)
@@ -471,7 +471,7 @@ const s: Record<string, React.CSSProperties> = {
   field:        { display: "flex", flexDirection: "column", gap: 4, marginBottom: 12 },
   label:        { fontSize: 11, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.4px" },
   input:        { height: 40, padding: "0 12px", border: "1px solid #d1d5db", borderRadius: 8, fontSize: 14, color: "#111", background: "#fafafa", outline: "none", width: "100%", boxSizing: "border-box" },
-  primaryBtn:   { height: 44, padding: "0 20px", background: "#111", color: "white", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: "pointer" },
+  primaryBtn:   { height: 44, padding: "0 20px", background: "hsl(var(--primary))", color: "white", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: "pointer" },
   filterBtn:    { padding: "5px 12px", borderRadius: 20, border: "none", fontSize: 12, fontWeight: 600, cursor: "pointer" },
   statCard:     { background: "white", border: "1px solid #e5e7eb", borderRadius: 10, padding: "14px 16px" },
   statVal:      { fontSize: 20, fontWeight: 800, color: "#111" },

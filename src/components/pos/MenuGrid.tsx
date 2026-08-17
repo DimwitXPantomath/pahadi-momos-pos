@@ -53,7 +53,7 @@ export default function MenuGrid({
   })
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full min-h-0">
 
       {/* Search + Veg Filter */}
       <div className="flex gap-2 mb-3">
@@ -69,7 +69,7 @@ export default function MenuGrid({
               vegFilter === f
                 ? f === "veg" ? "bg-green-600 text-white"
                 : f === "nonveg" ? "bg-red-600 text-white"
-                : "bg-black text-white"
+                : "bg-primary text-white"
                 : "bg-white"
             )}>
             {f === "all" ? "All" : f === "veg" ? "🟢 Veg" : "🔴 Non-veg"}
@@ -110,13 +110,32 @@ export default function MenuGrid({
       )}
 
       {/* Menu Grid */}
-      <div className="grid grid-cols-3 gap-3 overflow-y-auto pb-4 content-start">
+      <div className="grid grid-cols-3 gap-3 overflow-y-auto pb-4 content-start flex-1 min-h-0">
         {filtered.map(item => {
           // FIX: use buildCartId — matches useCart's compound ID format
           const cartItem = cart.find(i => i.id === buildCartId(item.id))
+          const hasSizes = !!item.sizes && item.sizes.length > 0
 
           return (
-            <div key={item.id} className="bg-white border rounded-xl p-3">
+            <div
+              key={item.id}
+              onClick={hasSizes ? undefined : () => addToCart(item)}
+              role={hasSizes ? undefined : "button"}
+              tabIndex={hasSizes ? undefined : 0}
+              onKeyDown={hasSizes ? undefined : (e) => {
+                if (e.key === "Enter" || e.key === " ") { e.preventDefault(); addToCart(item) }
+              }}
+              className={cn(
+                "relative bg-white border rounded-xl p-3 text-left",
+                !hasSizes && "cursor-pointer transition-colors hover:border-primary hover:bg-primary/5 active:bg-primary/10"
+              )}
+            >
+              {!hasSizes && cartItem && (
+                <span className="absolute top-1.5 right-1.5 bg-primary text-primary-foreground text-[11px] font-bold rounded-full min-w-[20px] h-5 px-1 flex items-center justify-center">
+                  ×{cartItem.quantity}
+                </span>
+              )}
+
               <div className="h-16 flex items-center justify-center bg-gray-100 rounded mb-2 text-xl">
                 {item.is_veg ? "🥗" : "🍖"}
               </div>
@@ -127,12 +146,12 @@ export default function MenuGrid({
                 <span className="text-sm font-semibold truncate">{item.name}</span>
               </div>
 
-              <p className="text-orange-500 font-bold text-sm mb-2">₹{item.price}</p>
+              <p className="text-brand-accent font-bold text-sm mb-2">₹{item.price}</p>
 
-              {/* Sizes */}
-              {item.sizes && item.sizes.length > 0 ? (
+              {/* Sizes — tap-whole-card doesn't apply here since a size must be chosen */}
+              {hasSizes && (
                 <div className="flex flex-wrap gap-1">
-                  {item.sizes.map(size => {
+                  {item.sizes!.map(size => {
                     // FIX: correct ID format
                     const sizeCartItem = cart.find(i => i.id === buildCartId(item.id, size))
                     return sizeCartItem ? (
@@ -141,31 +160,16 @@ export default function MenuGrid({
                           className="w-6 h-6 border rounded text-sm font-bold">−</button>
                         <span className="text-xs font-bold min-w-[16px] text-center">{sizeCartItem.quantity}</span>
                         <button onClick={() => addToCart(item, size)}
-                          className="w-6 h-6 bg-black text-white rounded text-sm font-bold">+</button>
+                          className="w-6 h-6 bg-primary text-white rounded text-sm font-bold">+</button>
                       </div>
                     ) : (
                       <button key={size.label} onClick={() => addToCart(item, size)}
-                        className="px-2 py-1 text-xs bg-black text-white rounded">
+                        className="px-2 py-1 text-xs bg-primary text-white rounded">
                         {size.label} ₹{size.price}
                       </button>
                     )
                   })}
                 </div>
-
-              /* No sizes */
-              ) : cartItem ? (
-                <div className="flex items-center gap-2">
-                  <button onClick={() => decreaseQty(cartItem.id)}
-                    className="w-7 h-7 border rounded font-bold text-sm">−</button>
-                  <span className="text-sm font-bold min-w-[20px] text-center">{cartItem.quantity}</span>
-                  <button onClick={() => increaseQty(cartItem.id)}
-                    className="w-7 h-7 bg-black text-white rounded font-bold text-sm">+</button>
-                </div>
-              ) : (
-                <button onClick={() => addToCart(item)}
-                  className="w-full bg-black text-white py-1.5 rounded text-sm font-semibold">
-                  Add
-                </button>
               )}
             </div>
           )

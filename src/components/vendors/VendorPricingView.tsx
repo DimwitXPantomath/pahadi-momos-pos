@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react"
 import { supabase } from "@/lib/supabase"
+import BillImportModal from "./BillImportModal"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -100,6 +101,7 @@ export default function VendorPricingView() {
     product_url: "",
   })
   const [editPrice, setEditPrice] = useState<VendorItemPrice | null>(null)
+  const [showBillImport, setShowBillImport] = useState(false)
   const [priceFilter, setPriceFilter] = useState({ ingredient_id: "", shop_id: "" })
 
   // ── Compare ────────────────────────────────────────────────────────────────
@@ -301,15 +303,33 @@ export default function VendorPricingView() {
           <h2 style={s.title}>🏪 Vendor & Pricing</h2>
           <p style={s.subtitle}>Manage suppliers, track prices, find the best deal per ingredient</p>
         </div>
-        <div style={s.stats}>
-          <span style={s.statPill}>{vendors.length} vendors</span>
-          <span style={s.statPill}>{shops.length} shops</span>
-          <span style={s.statPill}>{prices.length} prices</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={s.stats}>
+            <span style={s.statPill}>{vendors.length} vendors</span>
+            <span style={s.statPill}>{shops.length} shops</span>
+            <span style={s.statPill}>{prices.length} prices</span>
+          </div>
+          <button
+            onClick={() => setShowBillImport(true)}
+            style={{ padding: "8px 14px", borderRadius: 8, border: "1.5px solid #e5e7eb", background: "white", color: "#111", fontSize: 13, fontWeight: 700, cursor: "pointer" }}
+          >
+            📄 Import bill (PDF)
+          </button>
         </div>
       </div>
 
       {error && <div style={s.errorBanner}>⚠️ {error}</div>}
       {success && <div style={s.successBanner}>✅ {success}</div>}
+
+      {showBillImport && (
+        <BillImportModal
+          vendors={vendors}
+          vendorShops={shops}
+          ingredients={ingredients}
+          onClose={() => setShowBillImport(false)}
+          onImported={load}
+        />
+      )}
 
       {/* Tabs */}
       <div style={s.tabBar}>
@@ -388,7 +408,7 @@ export default function VendorPricingView() {
                     </div>
                     <div style={{ display: "flex", gap: 6 }}>
                       <button
-                        style={{ ...s.iconBtn, background: selectedVendor?.id === vendor.id ? "#111" : "#f3f4f6", color: selectedVendor?.id === vendor.id ? "white" : "#111" }}
+                        style={{ ...s.iconBtn, background: selectedVendor?.id === vendor.id ? "hsl(var(--primary))" : "#f3f4f6", color: selectedVendor?.id === vendor.id ? "white" : "#111" }}
                         onClick={() => setSelectedVendor(v => v?.id === vendor.id ? null : vendor)}
                       >
                         {selectedVendor?.id === vendor.id ? "▲ Shops" : "▼ Shops"}
@@ -774,10 +794,10 @@ const s: Record<string, React.CSSProperties> = {
   title: { fontSize: 22, fontWeight: 800, color: "#111", margin: 0 },
   subtitle: { fontSize: 13, color: "#6b7280", marginTop: 4 },
   stats: { display: "flex", gap: 6 },
-  statPill: { background: "#111", color: "white", borderRadius: 20, padding: "4px 12px", fontSize: 12, fontWeight: 600 },
+  statPill: { background: "hsl(var(--primary))", color: "white", borderRadius: 20, padding: "4px 12px", fontSize: 12, fontWeight: 600 },
   tabBar: { display: "flex", gap: 4, marginBottom: 16, background: "#f3f4f6", borderRadius: 10, padding: 4 },
   tabBtn: { flex: 1, height: 36, border: "none", borderRadius: 8, fontSize: 13, fontWeight: 500, cursor: "pointer", background: "transparent", color: "#374151" },
-  tabBtnActive: { background: "white", fontWeight: 700, color: "#111", boxShadow: "0 1px 3px rgba(0,0,0,0.1)" },
+  tabBtnActive: { background: "white", fontWeight: 700, color: "hsl(var(--primary))", boxShadow: "0 1px 3px rgba(0,0,0,0.1)" },
   card: { background: "white", border: "1px solid #e5e7eb", borderRadius: 12, padding: 20, marginBottom: 16 },
   cardTitle: { fontSize: 14, fontWeight: 700, color: "#111", margin: "0 0 14px" },
   grid2: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 },
@@ -787,7 +807,7 @@ const s: Record<string, React.CSSProperties> = {
   input: { height: 40, padding: "0 12px", border: "1px solid #d1d5db", borderRadius: 8, fontSize: 14, color: "#111", background: "#fafafa", outline: "none", width: "100%", boxSizing: "border-box" },
   checkLabel: { display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 500, cursor: "pointer" },
   btnRow: { display: "flex", gap: 10, justifyContent: "flex-end" },
-  primaryBtn: { height: 44, padding: "0 20px", background: "#111", color: "white", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: "pointer" },
+  primaryBtn: { height: 44, padding: "0 20px", background: "hsl(var(--primary))", color: "white", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: "pointer" },
   secondaryBtn: { height: 44, padding: "0 20px", background: "white", color: "#374151", border: "1px solid #d1d5db", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: "pointer" },
   iconBtn: { width: 32, height: 32, border: "none", borderRadius: 6, cursor: "pointer", fontSize: 14, flexShrink: 0 },
   badge: { display: "inline-block", padding: "2px 8px", borderRadius: 20, fontSize: 11, fontWeight: 600 },

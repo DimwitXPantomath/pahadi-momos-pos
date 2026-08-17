@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { updateMenuItem } from "@/services/menuService"
+import { computeMenuItemCalories } from "@/services/calorieService"
 import type { MenuItem } from "@/types/pos"
 
 // Taste Palette dish tagging — staff-facing. Per the spec: an untagged
@@ -58,7 +59,40 @@ export default function DishTaggingModal({ item, onClose, onSaved }: Props) {
   const [mealCourseType, setMealCourseType] = useState(item.meal_course_type ?? null)
   const [flavorProfile, setFlavorProfile] = useState<string[]>(item.flavor_profile ?? [])
   const [estimatedCalories, setEstimatedCalories] = useState(item.estimated_calories?.toString() ?? "")
+  const [caloriesManual, setCaloriesManual] = useState(item.calories_manually_overridden ?? (item.estimated_calories != null))
   const [saving, setSaving] = useState(false)
+  const [calcState, setCalcState] = useState<
+    | { status: "idle" }
+    | { status: "loading" }
+    | { status: "no-recipe" }
+    | { status: "no-ingredients" }
+    | { status: "done"; caloriesPerServing: number; missingIngredients: string[] }
+  >({ status: "idle" })
+
+  const runAutoCalc = async () => {
+    setCalcState({ status: "loading" })
+    const result = await computeMenuItemCalories(item.id)
+    if (!result.ok) {
+      setCalcState({ status: result.reason })
+      return
+    }
+    setCalcState({ status: "done", caloriesPerServing: result.caloriesPerServing, missingIngredients: result.missingIngredients })
+    // Priority rule: an outlet-entered manual value always wins over the
+    // calculator. If the field is already a manual entry, the calculated
+    // number is shown as a suggestion only (via calcState below) — it
+    // never silently overwrites what the outlet typed in. Auto-fills
+    // only when nothing manual is on record yet, and only when every
+    // ingredient had calorie data (never fill in a partial number).
+    if (!caloriesManual && result.missingIngredients.length === 0) {
+      setEstimatedCalories(String(result.caloriesPerServing))
+      setCaloriesManual(false)
+    }
+  }
+
+  const acceptCalculated = (value: number) => {
+    setEstimatedCalories(String(value))
+    setCaloriesManual(false)
+  }
 
   const toggleMulti = (list: string[], setList: (v: string[]) => void, val: string) => {
     setList(list.includes(val) ? list.filter(v => v !== val) : [...list, val])
@@ -82,9 +116,7 @@ export default function DishTaggingModal({ item, onClose, onSaved }: Props) {
       meal_course_type: mealCourseType,
       flavor_profile: flavorProfile.length > 0 ? flavorProfile : null,
       estimated_calories: estimatedCalories ? Number(estimatedCalories) : null,
-      // No auto-calculation exists yet (see Taste Palette calorie-calc
-      // task) — any value entered here is inherently a manual entry.
-      calories_manually_overridden: estimatedCalories !== "",
+      calories_manually_overridden: estimatedCalories !== "" ? caloriesManual : false,
     } as Partial<MenuItem>)
     setSaving(false)
     if (updated) onSaved(updated)
@@ -149,14 +181,51 @@ export default function DishTaggingModal({ item, onClose, onSaved }: Props) {
 
           <div className="mb-5">
             <label className="text-xs font-semibold text-gray-700 block mb-2">Estimated calories</label>
-            <input
-              type="number"
-              value={estimatedCalories}
-              onChange={e => setEstimatedCalories(e.target.value)}
-              placeholder="e.g. 320"
-              className="w-40 px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-primary"
-            />
-            <span className="text-xs text-gray-400 ml-2">kcal — manual for now, auto-calc from recipe cost data comes later</span>
+            <div className="flex items-center gap-2 flex-wrap">
+              <input
+                type="number"
+                value={estimatedCalories}
+                onChange={e => { setEstimatedCalories(e.target.value); setCaloriesManual(true) }}
+                placeholder="e.g. 320"
+                className="w-40 px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-primary"
+              />
+              <span className="text-xs text-gray-400">kcal per serving</span>
+              <button
+                type="button"
+                onClick={runAutoCalc}
+                disabled={calcState.status === "loading"}
+                className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-gray-200 text-gray-700 hover:border-primary disabled:opacity-50"
+              >
+                {calcState.status === "loading" ? "Calculating…" : "Auto-calculate from recipe"}
+              </button>
+            </div>
+
+            {calcState.status === "no-recipe" && (
+              <p className="text-xs text-amber-600 mt-2">No recipe is linked to this menu item yet — can't auto-calculate. Add one in Recipes, or enter calories manually.</p>
+            )}
+            {calcState.status === "no-ingredients" && (
+              <p className="text-xs text-amber-600 mt-2">This recipe has no ingredients listed — can't auto-calculate.</p>
+            )}
+            {calcState.status === "done" && calcState.missingIngredients.length === 0 && !caloriesManual && (
+              <p className="text-xs text-green-700 mt-2">Filled in {calcState.caloriesPerServing} kcal/serving from the recipe.</p>
+            )}
+            {calcState.status === "done" && calcState.missingIngredients.length === 0 && caloriesManual && (
+              <p className="text-xs text-gray-600 mt-2">
+                Calculated from the recipe: {calcState.caloriesPerServing} kcal/serving. Your manual entry above takes priority and won't be overwritten —{" "}
+                <button type="button" className="underline font-semibold" onClick={() => acceptCalculated(calcState.caloriesPerServing)}>
+                  use the calculated value instead
+                </button>.
+              </p>
+            )}
+            {calcState.status === "done" && calcState.missingIngredients.length > 0 && (
+              <p className="text-xs text-amber-600 mt-2">
+                Partial estimate only — {calcState.caloriesPerServing} kcal/serving counts just the ingredients we have calorie data for. Missing: {calcState.missingIngredients.slice(0, 6).join(", ")}{calcState.missingIngredients.length > 6 ? ", …" : ""}. Not auto-filled — add calorie data for these ingredients first, or enter a manual estimate.
+              </p>
+            )}
+
+            <p className="text-xs text-gray-400 mt-1">
+              Auto-calc uses a curated reference table of common ingredient calorie values (not the full government IFCT dataset) — treat results as a testable estimate, not a lab-verified number.
+            </p>
           </div>
 
           <div className="mb-5">

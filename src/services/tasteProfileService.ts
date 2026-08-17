@@ -46,7 +46,7 @@ export async function saveTasteProfile(
   customerUid: string,
   draft: TasteProfileDraft,
   markCompleted = false
-): Promise<TasteProfile | null> {
+): Promise<{ profile: TasteProfile | null; error: string | null }> {
   const { data, error } = await supabase.rpc("upsert_taste_profile", {
     p_customer_uid: customerUid,
     p_phone: draft.phone ?? null,
@@ -66,7 +66,7 @@ export async function saveTasteProfile(
   })
   if (error) {
     console.error("saveTasteProfile error:", error)
-    return null
+    return { profile: null, error: error.message ?? "Unknown error saving profile" }
   }
-  return data as TasteProfile
+  return { profile: data as TasteProfile, error: null }
 }

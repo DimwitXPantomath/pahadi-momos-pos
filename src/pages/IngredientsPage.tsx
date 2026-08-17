@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from "react"
 import { supabase } from "@/lib/supabase"
+import { parseDbTimestamp } from "@/lib/utils"
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   Legend, ResponsiveContainer,
 } from "recharts"
+import { useAuth } from "@/contexts/AuthContext"
+import { PROCUREMENT_CATEGORIES, categoryColor } from "@/lib/procurementCategories"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -26,6 +29,7 @@ interface IngredientRow {
   preferred_vendor_id: string | null
   current_stock: number
   created_at: string
+  category: string | null
 }
 
 interface Vendor {
@@ -50,6 +54,27 @@ interface StockRow {
   note: string
 }
 
+interface ReconciliationRow {
+  id: string
+  ingredient_id: string
+  ingredient_name: string
+  usage_unit: string | null
+  expected_quantity: number
+  actual_quantity: number
+  difference: number
+  adjusted_by_name: string | null
+  adjusted_by_role: string | null
+  note: string | null
+  created_at: string
+}
+
+interface PendingProcurementItem {
+  ingredient_id: string
+  qty: number
+}
+
+const PENDING_PROCUREMENT_KEY = "praang_pending_procurement_items"
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const PURCHASE_UNITS: PurchaseUnit[] = [
@@ -68,6 +93,7 @@ const emptyForm = {
   unitsPerPurchase:   "",
   minStockLevel:      "",
   preferredVendorId:  "",
+  category:           "" as string,
 }
 
 const emptyStockRow = (): StockRow => ({
@@ -80,8 +106,17 @@ function fmt(n: number, d = 2) {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function IngredientsPage() {
-  const [tab, setTab] = useState<"list" | "add" | "stock">("list")
+type Props = {
+  // Threaded down from Index.tsx via InventoryView.tsx so "Create
+  // Procurement Order" from the Reorder Alerts tab can actually switch
+  // the main view — Index.tsx owns `view` state, IngredientsPage has
+  // no router of its own to navigate with.
+  onGoToProcurement?: () => void
+}
+
+export default function IngredientsPage({ onGoToProcurement }: Props) {
+  const { user, profile } = useAuth()
+  const [tab, setTab] = useState<"list" | "add" | "stock" | "reorder" | "reconciliation">("list")
   const [form, setForm]                   = useState(emptyForm)
   const [editRow, setEditRow]             = useState<IngredientRow | null>(null)
   const [ingredients, setIngredients]     = useState<IngredientRow[]>([])
@@ -102,6 +137,14 @@ export default function IngredientsPage() {
   const [priceHistory, setPriceHistory]   = useState<PriceHistoryRow[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
 
+  // Reconciliation log
+  const [reconLog, setReconLog]           = useState<ReconciliationRow[]>([])
+  const [reconLoading, setReconLoading]   = useState(false)
+
+  // Reorder alerts (ingredients below min_stock_level)
+  const [reorderQty, setReorderQty]       = useState<Record<string, string>>({})
+  const [reorderSelected, setReorderSelected] = useState<Record<string, boolean>>({})
+
   // ── Live calculation (Tab 2 preview) ──────────────────────────────────────
   const parsedCPU  = parseFloat(form.costPerUnit)        || 0
   const parsedUPP  = parseFloat(form.unitsPerPurchase)   || 0
@@ -111,15 +154,46 @@ export default function IngredientsPage() {
   const showPreview = parsedUPP > 0 && parsedCPU > 0
 
   // ── Fetch ──────────────────────────────────────────────────────────────────
+  // NOTE: current_stock is sourced from inventory_stock.current_quantity,
+  // not the ingredients.current_stock column (legacy — see migration
+  // 027_stock_reconciliation.sql). ingredients.current_stock is no
+  // longer written by this page.
   async function fetchIngredients() {
     setLoading(true)
-    const { data, error } = await supabase
-      .from("ingredients")
-      .select("*")
-      .order("created_at", { ascending: false })
-    if (error) setError(error.message)
-    else setIngredients((data || []) as IngredientRow[])
+    const [{ data, error }, { data: stockRows }] = await Promise.all([
+      supabase.from("ingredients").select("*").order("created_at", { ascending: false }),
+      supabase.from("inventory_stock").select("ingredient_id, current_quantity"),
+    ])
+    if (error) { setError(error.message); setLoading(false); return }
+    const stockMap = new Map((stockRows || []).map(s => [s.ingredient_id, s.current_quantity || 0]))
+    setIngredients(
+      ((data || []) as IngredientRow[]).map(i => ({ ...i, current_stock: stockMap.get(i.id) ?? 0 }))
+    )
     setLoading(false)
+  }
+
+  async function fetchReconciliationLog() {
+    setReconLoading(true)
+    const { data, error } = await supabase
+      .from("stock_reconciliation_log")
+      .select("*, ingredients(name, usage_unit)")
+      .order("created_at", { ascending: false })
+      .limit(100)
+    if (error) { setError(error.message); setReconLoading(false); return }
+    setReconLog((data || []).map((r: any) => ({
+      id: r.id,
+      ingredient_id: r.ingredient_id,
+      ingredient_name: r.ingredients?.name ?? "—",
+      usage_unit: r.usage_unit ?? r.ingredients?.usage_unit ?? null,
+      expected_quantity: r.expected_quantity,
+      actual_quantity: r.actual_quantity,
+      difference: r.difference,
+      adjusted_by_name: r.adjusted_by_name,
+      adjusted_by_role: r.adjusted_by_role,
+      note: r.note,
+      created_at: r.created_at,
+    })))
+    setReconLoading(false)
   }
 
   async function fetchVendors() {
@@ -146,6 +220,7 @@ export default function IngredientsPage() {
   }
 
   useEffect(() => { fetchIngredients(); fetchVendors() }, [])
+  useEffect(() => { if (tab === "reconciliation") fetchReconciliationLog() }, [tab])
 
   // ── Save (Add / Edit) ──────────────────────────────────────────────────────
   async function handleSave() {
@@ -167,6 +242,7 @@ export default function IngredientsPage() {
       cost_per_usage_unit: calcCostPerUsageUnit,
       min_stock_level:    parseFloat(form.minStockLevel) || 0,
       preferred_vendor_id: form.preferredVendorId || null,
+      category:           form.category || null,
     }
 
     let err: any
@@ -207,6 +283,7 @@ export default function IngredientsPage() {
       unitsPerPurchase:   String(row.units_per_purchase ?? ""),
       minStockLevel:      row.min_stock_level > 0 ? String(row.min_stock_level) : "",
       preferredVendorId:  row.preferred_vendor_id || "",
+      category:           row.category || "",
     })
     setEditRow(row)
     setTab("add")
@@ -229,15 +306,11 @@ export default function IngredientsPage() {
       const ing = ingredients.find(i => i.id === row.ingredientId)
       if (!ing) continue
 
-      let newQty = ing.current_stock ?? 0
-      if (row.type === "add")    newQty = newQty + qty
-      if (row.type === "remove") newQty = Math.max(0, newQty - qty)
+      const expected = ing.current_stock ?? 0
+      let newQty = expected
+      if (row.type === "add")    newQty = expected + qty
+      if (row.type === "remove") newQty = Math.max(0, expected - qty)
       if (row.type === "set")    newQty = qty
-
-      await supabase
-        .from("ingredients")
-        .update({ current_stock: newQty })
-        .eq("id", row.ingredientId)
 
       await supabase
         .from("inventory_stock")
@@ -245,6 +318,23 @@ export default function IngredientsPage() {
           { ingredient_id: row.ingredientId, current_quantity: newQty, updated_at: new Date().toISOString() },
           { onConflict: "ingredient_id" }
         )
+
+      // "Set exact amount" = a physical count overriding the system's
+      // running total — log the variance for the audit sheet. "add"/
+      // "remove" are intentional deltas (e.g. logging a delivery), not
+      // a discrepancy discovery, so they're not logged here.
+      if (row.type === "set") {
+        await supabase.from("stock_reconciliation_log").insert({
+          ingredient_id: row.ingredientId,
+          expected_quantity: expected,
+          actual_quantity: newQty,
+          usage_unit: ing.usage_unit || ing.unit || null,
+          adjusted_by: user?.id ?? null,
+          adjusted_by_role: profile?.role ?? null,
+          adjusted_by_name: profile?.full_name ?? null,
+          note: row.note || null,
+        })
+      }
     }
 
     setSuccess(`Updated stock for ${validRows.length} ingredient${validRows.length !== 1 ? "s" : ""}!`)
@@ -274,6 +364,36 @@ export default function IngredientsPage() {
   const lowStockCount  = ingredients.filter(i => i.min_stock_level > 0 && (i.current_stock ?? 0) < i.min_stock_level && (i.current_stock ?? 0) > 0).length
   const outOfStockCount = ingredients.filter(i => (i.current_stock ?? 0) === 0).length
 
+  // Reorder alerts — anything under its min stock level, system-detected
+  // (deducted by sales/production). This is a live check, not a stored
+  // "alert" record: opening the tab always shows what's short right now.
+  // Suggested qty tops the ingredient up to exactly min_stock_level,
+  // rounded up to a whole purchase unit — staff can raise it before
+  // sending to Procurement, per "suggest user to add more if required".
+  const reorderList = ingredients.filter(i => i.min_stock_level > 0 && (i.current_stock ?? 0) < i.min_stock_level)
+
+  function suggestedPurchaseQty(ing: IngredientRow): number {
+    const shortfall = Math.max(0, ing.min_stock_level - (ing.current_stock ?? 0))
+    const upp = ing.units_per_purchase > 0 ? ing.units_per_purchase : 1
+    return Math.max(1, Math.ceil(shortfall / upp))
+  }
+
+  function toggleReorderSelected(id: string, ing: IngredientRow) {
+    setReorderSelected(prev => ({ ...prev, [id]: !prev[id] }))
+    setReorderQty(prev => prev[id] ? prev : { ...prev, [id]: String(suggestedPurchaseQty(ing)) })
+  }
+
+  const sendToProcurement = () => {
+    const items: PendingProcurementItem[] = reorderList
+      .filter(i => reorderSelected[i.id])
+      .map(i => ({ ingredient_id: i.id, qty: parseFloat(reorderQty[i.id] ?? "0") || suggestedPurchaseQty(i) }))
+    if (items.length === 0) { setError("Check at least one ingredient to reorder"); return }
+    localStorage.setItem(PENDING_PROCUREMENT_KEY, JSON.stringify(items))
+    setReorderSelected({}); setReorderQty({})
+    if (onGoToProcurement) onGoToProcurement()
+    else setSuccess(`Queued ${items.length} item${items.length !== 1 ? "s" : ""} — open Procurement → New Request to finish.`)
+  }
+
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div style={p.page}>
@@ -297,6 +417,8 @@ export default function IngredientsPage() {
           { key: "list",  label: "📋 Ingredients" },
           { key: "add",   label: editRow ? `✏️ Editing: ${editRow.name}` : "➕ Add" },
           { key: "stock", label: "📦 Stock Update" },
+          { key: "reorder", label: reorderList.length > 0 ? `⚠️ Reorder Alerts (${reorderList.length})` : "⚠️ Reorder Alerts" },
+          { key: "reconciliation", label: "🧾 Reconciliation Log" },
         ] as const).map(t => (
           <button
             key={t.key}
@@ -306,7 +428,7 @@ export default function IngredientsPage() {
             }}
             style={{
               ...p.tabBtn,
-              background: tab === t.key ? "#111" : "white",
+              background: tab === t.key ? "hsl(var(--primary))" : "white",
               color:      tab === t.key ? "white" : "#374151",
               fontWeight: tab === t.key ? 700 : 400,
             }}
@@ -348,7 +470,7 @@ export default function IngredientsPage() {
               <table style={p.table}>
                 <thead>
                   <tr>
-                    {["Name", "Stock", "Cost/Unit", "Yield%", "Usage Unit", "Units/Purchase", "Cost/Usage Unit", "Min Stock", ""].map(h => (
+                    {["Name", "Category", "Stock", "Cost/Unit", "Yield%", "Usage Unit", "Units/Purchase", "Cost/Usage Unit", "Min Stock", ""].map(h => (
                       <th key={h} style={p.th}>{h}</th>
                     ))}
                   </tr>
@@ -365,6 +487,13 @@ export default function IngredientsPage() {
                               Low Stock
                             </span>
                           )}
+                        </td>
+                        <td style={p.td}>
+                          {row.category ? (
+                            <span style={{ ...p.badge, background: categoryColor(row.category).bg, color: categoryColor(row.category).color }}>
+                              {row.category}
+                            </span>
+                          ) : <span style={{ color: "#9ca3af", fontSize: 11 }}>Unset</span>}
                         </td>
                         <td style={{ ...p.td, fontFamily: "monospace" }}>
                           {(() => {
@@ -548,19 +677,35 @@ export default function IngredientsPage() {
             </div>
           </div>
 
-          {/* Row 5: Preferred Vendor */}
-          <div style={p.field}>
-            <label style={p.label}>Preferred Vendor</label>
-            <select
-              style={p.input}
-              value={form.preferredVendorId}
-              onChange={e => setForm(f => ({ ...f, preferredVendorId: e.target.value }))}
-            >
-              <option value="">— None —</option>
-              {vendors.map(v => (
-                <option key={v.id} value={v.id}>{v.name}</option>
-              ))}
-            </select>
+          {/* Row 5: Preferred Vendor + Category */}
+          <div style={p.grid2}>
+            <div style={p.field}>
+              <label style={p.label}>Preferred Vendor</label>
+              <select
+                style={p.input}
+                value={form.preferredVendorId}
+                onChange={e => setForm(f => ({ ...f, preferredVendorId: e.target.value }))}
+              >
+                <option value="">— None —</option>
+                {vendors.map(v => (
+                  <option key={v.id} value={v.id}>{v.name}</option>
+                ))}
+              </select>
+            </div>
+            <div style={p.field}>
+              <label style={p.label}>Procurement Category</label>
+              <select
+                style={p.input}
+                value={form.category}
+                onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
+              >
+                <option value="">— Unset —</option>
+                {PROCUREMENT_CATEGORIES.map(c => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+              <span style={p.helper}>Filters the ingredient list when a vendor with a matching category is picked in Procurement</span>
+            </div>
           </div>
 
           {/* Live costing preview */}
@@ -749,6 +894,143 @@ export default function IngredientsPage() {
         </div>
       )}
 
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {/* TAB 4 — REORDER ALERTS                                             */}
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {tab === "reorder" && (
+        <div style={p.card}>
+          <h3 style={{ ...p.cardTitle, margin: "0 0 4px" }}>⚠️ Reorder Alerts</h3>
+          <p style={{ fontSize: 13, color: "#6b7280", marginBottom: 16 }}>
+            These ingredients have fallen below their min stock level based on system-tracked sales and production.
+            Check the physical shelf before approving — this reflects what the system expects, not a confirmed count.
+            Approved items get queued into a new Procurement request with a suggested quantity you can adjust.
+          </p>
+
+          {reorderList.length === 0 ? (
+            <div style={p.empty}>✅ Nothing below its min stock level right now.</div>
+          ) : (
+            <>
+              <div style={{ overflowX: "auto", marginBottom: 16 }}>
+                <table style={p.table}>
+                  <thead>
+                    <tr>
+                      {["", "Ingredient", "Current", "Min Stock", "Suggested Reorder Qty", ""].map(h => (
+                        <th key={h} style={p.th}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {reorderList.map(ing => {
+                      const checked = !!reorderSelected[ing.id]
+                      const upp = ing.units_per_purchase > 0 ? ing.units_per_purchase : 1
+                      return (
+                        <tr key={ing.id}>
+                          <td style={p.td}>
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleReorderSelected(ing.id, ing)}
+                            />
+                          </td>
+                          <td style={{ ...p.td, fontWeight: 600 }}>{ing.name}</td>
+                          <td style={{ ...p.td, color: "#dc2626", fontFamily: "monospace" }}>
+                            {fmt((ing.current_stock ?? 0) / upp, 2)} {ing.purchase_unit}
+                          </td>
+                          <td style={{ ...p.td, fontFamily: "monospace" }}>
+                            {fmt(ing.min_stock_level / upp, 2)} {ing.purchase_unit}
+                          </td>
+                          <td style={p.td}>
+                            <input
+                              type="number" min="1" step="1"
+                              style={{ ...p.input, height: 34, width: 90 }}
+                              value={reorderQty[ing.id] ?? String(suggestedPurchaseQty(ing))}
+                              onChange={e => setReorderQty(prev => ({ ...prev, [ing.id]: e.target.value }))}
+                              disabled={!checked}
+                            />
+                            <span style={{ fontSize: 11, color: "#9ca3af", marginLeft: 4 }}>{ing.purchase_unit}</span>
+                          </td>
+                          <td style={p.td}>
+                            {ing.category && (
+                              <span style={{ ...p.badge, background: "#f3f4f6", color: "#374151" }}>{ing.category}</span>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <div style={p.btnRow}>
+                <button style={p.primaryBtn} onClick={sendToProcurement}>
+                  ✓ Approve Selected → Create Procurement Order
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {/* TAB 5 — RECONCILIATION LOG                                         */}
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {tab === "reconciliation" && (
+        <div style={p.card}>
+          <h3 style={{ ...p.cardTitle, margin: "0 0 4px" }}>🧾 Stock Reconciliation Log</h3>
+          <p style={{ fontSize: 13, color: "#6b7280", marginBottom: 16 }}>
+            Every time someone enters a physical count via "Set exact amount" in Stock Update, it's logged here —
+            expected (system-tracked) vs actual (what was physically found), so shrinkage or counting errors are visible, not silently overwritten.
+          </p>
+
+          {reconLoading ? (
+            <div style={p.empty}>Loading…</div>
+          ) : reconLog.length === 0 ? (
+            <div style={p.empty}>No physical counts logged yet.</div>
+          ) : (
+            <div style={{ overflowX: "auto" }}>
+              <table style={p.table}>
+                <thead>
+                  <tr>
+                    {["Date", "Ingredient", "Expected", "Actual", "Difference", "By", "Note"].map(h => (
+                      <th key={h} style={p.th}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {reconLog.map((r, i) => {
+                    const isShort = r.difference < 0
+                    const isOver  = r.difference > 0
+                    return (
+                      <tr key={r.id} style={{ background: i % 2 === 0 ? "white" : "#f9fafb" }}>
+                        <td style={p.td}>
+                          {parseDbTimestamp(r.created_at).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
+                        </td>
+                        <td style={{ ...p.td, fontWeight: 600 }}>{r.ingredient_name}</td>
+                        <td style={{ ...p.td, fontFamily: "monospace" }}>{fmt(r.expected_quantity, 1)} {r.usage_unit}</td>
+                        <td style={{ ...p.td, fontFamily: "monospace" }}>{fmt(r.actual_quantity, 1)} {r.usage_unit}</td>
+                        <td style={p.td}>
+                          <span style={{
+                            ...p.badge,
+                            background: isShort ? "#fee2e2" : isOver ? "#dcfce7" : "#f3f4f6",
+                            color:      isShort ? "#991b1b" : isOver ? "#166534" : "#6b7280",
+                          }}>
+                            {isShort ? "" : "+"}{fmt(r.difference, 1)} {r.usage_unit}
+                          </span>
+                        </td>
+                        <td style={p.td}>
+                          {r.adjusted_by_name || "—"}
+                          {r.adjusted_by_role && <span style={{ color: "#9ca3af", fontSize: 11 }}> ({r.adjusted_by_role})</span>}
+                        </td>
+                        <td style={{ ...p.td, color: "#6b7280" }}>{r.note || "—"}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ── Delete modal ── */}
       {deleteId && (
         <div style={p.overlay} onClick={() => setDeleteId(null)}>
@@ -879,7 +1161,7 @@ const p: Record<string, React.CSSProperties> = {
   header:      { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 },
   title:       { fontSize: 22, fontWeight: 800, color: "#111", margin: 0 },
   subtitle:    { fontSize: 13, color: "#6b7280", marginTop: 4 },
-  statPill:    { background: "#111", color: "white", borderRadius: 20, padding: "6px 14px", fontSize: 13, fontWeight: 600 },
+  statPill:    { background: "hsl(var(--primary))", color: "white", borderRadius: 20, padding: "6px 14px", fontSize: 13, fontWeight: 600 },
   tabRow:      { display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" },
   tabBtn:      { height: 36, padding: "0 16px", border: "1px solid #e5e7eb", borderRadius: 20, fontSize: 13, cursor: "pointer" },
   card:        { background: "white", border: "1px solid #e5e7eb", borderRadius: 12, padding: 20, marginBottom: 16 },
@@ -899,7 +1181,7 @@ const p: Record<string, React.CSSProperties> = {
   errorBanner:   { background: "#fee2e2", color: "#991b1b", borderRadius: 8, padding: "10px 14px", fontSize: 13, marginBottom: 12 },
   successBanner: { background: "#dcfce7", color: "#166534", borderRadius: 8, padding: "10px 14px", fontSize: 13, marginBottom: 12 },
   btnRow:        { display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 16 },
-  primaryBtn:    { height: 44, padding: "0 20px", background: "#111", color: "white", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: "pointer" },
+  primaryBtn:    { height: 44, padding: "0 20px", background: "hsl(var(--primary))", color: "white", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: "pointer" },
   secondaryBtn:  { height: 44, padding: "0 20px", background: "white", color: "#374151", border: "1px solid #d1d5db", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: "pointer" },
   linkBtn:       { background: "none", border: "none", color: "#111", fontWeight: 700, cursor: "pointer", textDecoration: "underline", fontSize: 14 },
   table:         { width: "100%", borderCollapse: "collapse", fontSize: 13 },

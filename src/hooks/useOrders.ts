@@ -3,6 +3,7 @@ import { supabase } from "@/lib/supabase"
 import { OrderStatus } from "@/types/pos"
 import type { Order } from "@/types/pos"
 import { fetchStampProgram, addStamp } from "@/services/stampCardService"
+import { parseDbTimestamp } from "@/lib/utils"
 
 const OUTLET_ID = "demo-outlet"
 
@@ -81,6 +82,26 @@ export const useOrders = () => {
     if (data) {
       setOrders(prev => prev.map(o => o.id === orderId ? data : o))
     }
+  }
+
+  // ── Reject an incoming online/preorder order ─────────────────────
+  // POS orders never land in PLACED anymore (they insert straight into
+  // PREPARING with a staff-picked prep time — see Index.tsx placeOrder).
+  // So every order that reaches PLACED now is online/preorder, surfaced via
+  // the incoming-order popup instead of a board column. This does NOT touch
+  // Razorpay — if the order was already paid, staff has to issue any refund
+  // manually through the Razorpay dashboard; this app doesn't execute
+  // payment transactions.
+  const rejectOrder = async (orderId: string) => {
+    const { data, error } = await supabase
+      .from("orders")
+      .update({ status: OrderStatus.CANCELLED, cancelled_at: new Date().toISOString() })
+      .eq("id", orderId)
+      .select()
+      .single()
+
+    if (error) { console.error("rejectOrder error:", error); alert("Could not reject order: " + error.message); return }
+    if (data) setOrders(prev => prev.map(o => o.id === orderId ? data : o))
   }
 
   // ── Mark ready + send FCM push to customer ──────────────────────
@@ -207,12 +228,8 @@ export const useOrders = () => {
 
   // ── Timer — stops when collected ─────────────────────────────────
   const getOrderTime = (createdAt: string, closedAt?: string | null) => {
-    // Supabase returns timestamps without timezone suffix (no 'Z').
-    // JS Date treats those as LOCAL time in the browser — IST adds 5h30m = 330 min offset.
-    // Force UTC by appending 'Z' when no tz info is present.
-    const toUTC = (s: string) => new Date(/[Z+]/.test(s) ? s : s + "Z")
-    const created = toUTC(createdAt).getTime()
-    const end = closedAt ? toUTC(closedAt).getTime() : Date.now()
+    const created = parseDbTimestamp(createdAt).getTime()
+    const end = closedAt ? parseDbTimestamp(closedAt).getTime() : Date.now()
     const diff = Math.floor((end - created) / 1000)
     // Cap at 24h to avoid showing crazy numbers for old test orders
     if (diff < 0 || diff > 86400) return "—"
@@ -222,8 +239,12 @@ export const useOrders = () => {
   }
 
   // ── Color — only for active orders ───────────────────────────────
+  // Was previously using a bare `new Date(createdAt)` — same naive-timestamp
+  // bug as getOrderTime used to have (see parseDbTimestamp), which meant this
+  // always computed ~330 minutes elapsed (the IST offset) for every order,
+  // so every card silently showed the "very overdue" color immediately.
   const getOrderColor = (createdAt: string) => {
-    const minutes = (Date.now() - new Date(createdAt).getTime()) / 60000
+    const minutes = (Date.now() - parseDbTimestamp(createdAt).getTime()) / 60000
     if (minutes < 3) return "#22c55e"
     if (minutes < 6) return "#eab308"
     if (minutes < 10) return "#f97316"
@@ -237,7 +258,7 @@ export const useOrders = () => {
     alertedOrdersRef,
     placedOrders, preparingOrders, readyOrders, collectedOrders,
     fetchOrders, subscribeToOrders,
-    startPreparing, markReady, collectOrder, updatePayment, markPaid,
+    startPreparing, rejectOrder, markReady, collectOrder, updatePayment, markPaid,
     getOrderTime, getOrderColor,
   }
 }
